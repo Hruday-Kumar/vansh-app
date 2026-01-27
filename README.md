@@ -1,50 +1,231 @@
-# Welcome to your Expo app 👋
+<div align="center">
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+# 🪷 Vansh - Family Heritage App
 
-## Get started
+### *वंश - Preserving Family Legacies Across Generations*
 
-1. Install dependencies
+[![React Native](https://img.shields.io/badge/React_Native-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)](https://reactnative.dev/)
+[![Expo](https://img.shields.io/badge/Expo-000020?style=for-the-badge&logo=expo&logoColor=white)](https://expo.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
+[![MySQL](https://img.shields.io/badge/MySQL-4479A1?style=for-the-badge&logo=mysql&logoColor=white)](https://www.mysql.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
-   ```bash
-   npm install
-   ```
+<p align="center">
+  <strong>A beautiful family heritage preservation app that helps you document, share, and preserve your family's stories, memories, traditions, and wisdom for generations to come.</strong>
+</p>
 
-2. Start the app
+---
 
-   ```bash
-   npx expo start
-   ```
+</div>
 
-In the output, you'll find options to open the app in a
+## ✨ Features
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+| Feature | Description |
+|---------|-------------|
+| 🏠 **Time River** | A chronological feed of family moments |
+| 📸 **Smriti (Memories)** | Photo & video gallery with AI-powered tagging |
+| 🎙️ **Katha (Stories)** | Voice recordings of family stories and wisdom |
+| 🌳 **Vriksha (Family Tree)** | Interactive family tree visualization |
+| 🪔 **Parampara (Traditions)** | Document family traditions and recipes |
+| 💌 **Vasiyat (Wisdom Vault)** | Time-locked messages for future generations |
+| ⚙️ **Settings** | User profile and preferences |
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+---
 
-## Get a fresh project
+## 🚀 Quick Start
 
-When you're ready, run:
+### Prerequisites
+
+- Node.js 18+ 
+- MySQL 8.0+
+- npm or yarn
+
+### 1. Install Frontend Dependencies
 
 ```bash
-npm run reset-project
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+### 2. Setup Backend
 
-## Learn more
+```bash
+cd backend
+npm install
+```
 
-To learn more about developing your project with Expo, look at the following resources:
+### 3. Configure Environment
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+Create/edit `.env` in the `backend` folder:
 
-## Join the community
+```env
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=1234
+DB_NAME=vansh_db
+JWT_SECRET=your-secret-key
+GEMINI_API_KEY=your-gemini-api-key
+```
 
-Join our community of developers creating universal apps.
+### 4. Setup Database
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```bash
+cd backend
+npm run db:setup    # Creates all tables
+npm run db:seed     # Adds sample data
+```
+
+### 5. Start Backend Server
+
+```bash
+cd backend
+npx tsx watch src/index.ts
+```
+
+The API will be available at `http://localhost:3000`
+
+### 6. Start Expo App
+
+In a new terminal:
+
+```bash
+npx expo start
+```
+
+Then:
+- Press `w` for web
+- Press `a` for Android
+- Press `i` for iOS
+
+## 🔐 Demo Login
+
+After seeding the database, use these credentials:
+
+- **Email:** `arjun@example.com`
+- **Password:** `vansh123`
+
+## 📁 Project Structure
+
+```
+vansh-app/
+├── app/                    # Expo Router screens
+│   ├── (tabs)/            # Tab navigation screens
+│   │   ├── index.tsx      # Home (Time River)
+│   │   ├── smriti.tsx     # Memories
+│   │   ├── katha.tsx      # Voice Stories
+│   │   ├── vriksha.tsx    # Family Tree
+│   │   ├── parampara.tsx  # Traditions
+│   │   ├── vasiyat.tsx    # Wisdom Vault
+│   │   └── explore.tsx    # Settings
+│   ├── login.tsx          # Login screen
+│   └── _layout.tsx        # Root layout
+├── backend/               # Express.js API
+│   ├── src/
+│   │   ├── controllers/   # Request handlers
+│   │   ├── routes/        # API routes
+│   │   ├── middleware/    # Auth, uploads, etc.
+│   │   ├── services/      # Gemini AI service
+│   │   └── scripts/       # DB setup & seed
+│   └── package.json
+├── src/
+│   ├── components/        # Reusable UI components
+│   ├── features/          # Feature-specific components
+│   ├── hooks/             # Custom React hooks
+│   ├── services/          # API client
+│   ├── state/             # Zustand stores
+│   ├── theme/             # Colors, spacing, typography
+│   └── types/             # TypeScript definitions
+└── package.json
+```
+
+## 🛠️ API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/auth/login` | User login |
+| POST | `/api/auth/register` | Create account |
+| GET | `/api/families` | Get family info |
+| GET | `/api/members` | List family members |
+| POST | `/api/members` | Add new member |
+| GET | `/api/memories` | List memories |
+| POST | `/api/memories` | Upload memory |
+| GET | `/api/kathas` | List voice stories |
+| POST | `/api/kathas` | Upload katha |
+| GET | `/api/vasiyats` | List wisdom messages |
+| POST | `/api/vasiyats` | Create vasiyat |
+
+## 🎨 Design Philosophy
+
+Vansh uses a **Digital Sanskriti** design language inspired by:
+
+- 🏛️ Temple architecture and sacred geometry
+- 🧵 Traditional Indian textiles (Kanchipuram silks)
+- 📜 Aged manuscripts and palm leaf textures
+- 🌺 Sacred colors (vermilion, turmeric, lotus pink)
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Here's how you can help:
+
+1. 🍴 Fork the repository
+2. 🌿 Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. 💾 Commit your changes (`git commit -m 'Add amazing feature'`)
+4. 📤 Push to the branch (`git push origin feature/amazing-feature`)
+5. 🔃 Open a Pull Request
+
+---
+
+## 🚀 Production Deployment
+
+### Environment Variables
+
+Create a `.env` file with the following production settings:
+
+```env
+NODE_ENV=production
+PORT=3000
+DB_HOST=your-db-host
+DB_USER=your-db-user
+DB_PASSWORD=your-secure-password
+DB_NAME=vansh_db
+JWT_SECRET=your-256-bit-secret-key
+JWT_EXPIRES_IN=7d
+GEMINI_API_KEY=your-gemini-api-key
+ALLOWED_ORIGINS=https://your-domain.com
+```
+
+### Database Migration
+
+```bash
+cd backend
+mysql -u root -p vansh_db < sql/migrations/001_initial_schema.sql
+mysql -u root -p vansh_db < sql/migrations/002_add_user_sessions.sql
+mysql -u root -p vansh_db < sql/migrations/003_production_indexes.sql
+```
+
+### Production Features
+
+| Feature | Description |
+|---------|-------------|
+| 🔒 **Security** | Helmet.js, CORS, rate limiting |
+| 📊 **Logging** | Morgan request logging |
+| 🗜️ **Performance** | Gzip compression |
+| 💾 **Database** | Connection pooling, retry logic |
+| ⚡ **Graceful Shutdown** | Proper cleanup on SIGTERM/SIGINT |
+
+---
+
+## 📄 License
+
+MIT License - feel free to use this for your own family!
+
+---
+
+Made with 🪷 for families everywhere
+<div align="center">
+
+**[⬆ Back to Top](#-vansh---family-heritage-app)**
+
+</div>

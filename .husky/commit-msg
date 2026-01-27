@@ -1,0 +1,32 @@
+#!/bin/sh
+
+# Verify commit message follows conventional commit format
+# Format: <type>(<scope>): <subject>
+# Types: feat, fix, docs, style, refactor, test, chore, perf, ci
+
+COMMIT_MSG_FILE=$1
+COMMIT_MSG=$(cat "$COMMIT_MSG_FILE")
+
+# Regex for conventional commits
+PATTERN="^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert)(\([a-zA-Z0-9-]+\))?: .{1,100}$"
+
+if ! echo "$COMMIT_MSG" | head -1 | grep -qE "$PATTERN"; then
+  echo ""
+  echo "❌ Invalid commit message format!"
+  echo ""
+  echo "Your message: $COMMIT_MSG"
+  echo ""
+  echo "Expected format: <type>(<scope>): <subject>"
+  echo ""
+  echo "Types: feat, fix, docs, style, refactor, test, chore, perf, ci, build, revert"
+  echo ""
+  echo "Examples:"
+  echo "  feat(vriksha): add zoom gesture to family tree"
+  echo "  fix(smriti): resolve memory upload crash on iOS"
+  echo "  docs: update README with setup instructions"
+  echo "  chore(deps): upgrade expo to version 54"
+  echo ""
+  exit 1
+fi
+
+echo "✅ Commit message format is valid"

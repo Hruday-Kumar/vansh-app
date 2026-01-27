@@ -1,43 +1,111 @@
 # Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
 
-# dependencies
+# ═══════════════════════════════════════════════════════════
+# DEPENDENCIES
+# ═══════════════════════════════════════════════════════════
 node_modules/
+*/node_modules/
 
-# Expo
+# ═══════════════════════════════════════════════════════════
+# EXPO / REACT NATIVE
+# ═══════════════════════════════════════════════════════════
 .expo/
 dist/
 web-build/
 expo-env.d.ts
+/ios
+/android
 
-# Native
-.kotlin/
-*.orig.*
+# Metro bundler
+.metro-health-check*
+*.metro.*
+
+# ═══════════════════════════════════════════════════════════
+# BUILD OUTPUTS
+# ═══════════════════════════════════════════════════════════
+*.tsbuildinfo
+build/
+dist/
+out/
+
+# ═══════════════════════════════════════════════════════════
+# ENVIRONMENT & SECRETS
+# ═══════════════════════════════════════════════════════════
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.env*.local
+backend/.env
+
+# ═══════════════════════════════════════════════════════════
+# SECURITY / CREDENTIALS
+# ═══════════════════════════════════════════════════════════
 *.jks
 *.p8
 *.p12
 *.key
+*.pem
 *.mobileprovision
+.kotlin/
+*.orig.*
 
-# Metro
-.metro-health-check*
-
-# debug
+# ═══════════════════════════════════════════════════════════
+# DEBUG / LOGS
+# ═══════════════════════════════════════════════════════════
 npm-debug.*
 yarn-debug.*
 yarn-error.*
+logs/
+*.log
+lerna-debug.log*
 
-# macOS
+# ═══════════════════════════════════════════════════════════
+# OS FILES
+# ═══════════════════════════════════════════════════════════
 .DS_Store
-*.pem
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
 
-# local env files
-.env*.local
+# ═══════════════════════════════════════════════════════════
+# IDE / EDITOR
+# ═══════════════════════════════════════════════════════════
+.idea/
+*.sublime-workspace
+*.sublime-project
+*.swp
+*.swo
+*~
 
-# typescript
-*.tsbuildinfo
+# Keep VS Code settings but ignore history/cache
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
 
+# ═══════════════════════════════════════════════════════════
+# UPLOADS / USER DATA
+# ═══════════════════════════════════════════════════════════
+uploads/
+backend/uploads/
+!uploads/.gitkeep
+!backend/uploads/.gitkeep
+
+# ═══════════════════════════════════════════════════════════
+# TESTING
+# ═══════════════════════════════════════════════════════════
+coverage/
+.nyc_output/
+
+# ═══════════════════════════════════════════════════════════
+# MISC
+# ═══════════════════════════════════════════════════════════
+*.orig
 app-example
-
-# generated native folders
-/ios
-/android
