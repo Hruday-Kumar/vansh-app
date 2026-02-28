@@ -593,6 +593,52 @@ export class MemoryController {
     }
   };
   
+  /**
+   * Check for new/updated memories since a given timestamp (family sync)
+   */
+  checkSync = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!req.user) {
+        throw new AppError('Not authenticated', 401, 'UNAUTHORIZED');
+      }
+      
+      const { since } = req.query;
+      const sinceDate = since ? new Date(since as string) : new Date(0);
+      
+      // Count new/updated memories since the timestamp
+      const [[{ count, latest }]] = await pool.query(`
+        SELECT COUNT(*) as count, MAX(created_at) as latest
+        FROM memories
+        WHERE family_id = ? AND created_at > ?
+      `, [req.user.familyId, sinceDate]) as any[];
+      
+      // Get total family memory count
+      const [[{ total }]] = await pool.query(
+        'SELECT COUNT(*) as total FROM memories WHERE family_id = ?',
+        [req.user.familyId]
+      ) as any[];
+      
+      // Get family member count who have uploaded
+      const [[{ contributors }]] = await pool.query(`
+        SELECT COUNT(DISTINCT uploaded_by) as contributors
+        FROM memories WHERE family_id = ?
+      `, [req.user.familyId]) as any[];
+      
+      res.json({
+        success: true,
+        data: {
+          hasNewMemories: count > 0,
+          newCount: count,
+          latestAt: latest,
+          totalMemories: total,
+          contributors,
+        }
+      });
+    } catch (error) {
+      next(error);
+    }
+  };
+  
   // Helper to format memory data
   private formatMemory = (m: any) => {
     // Build full URL for media files

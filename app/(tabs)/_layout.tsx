@@ -1,57 +1,51 @@
 /**
- * 🪷 VANSH - Main Tab Navigator
- * Sacred pillars as navigation tabs
+ * VANSH - Main Tab Navigator
+ * Clean 4-tab layout: Home, Memories, Tree, More
  */
 
+import { MaterialIcons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
-import Animated, {
-    useAnimatedStyle,
-    useSharedValue,
-    withSpring,
-} from 'react-native-reanimated';
-import { VanshColors, VanshSpacing, VanshSpring } from '../../src/theme';
+import { Platform, StyleSheet, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { VanshColors } from '../../src/theme';
 
-// Custom tab bar icon with animation
+// Simple tab icon - no animations for better perf
 function TabIcon({ 
-  emoji, 
+  iconName, 
   focused, 
 }: { 
-  emoji: string; 
+  iconName: keyof typeof MaterialIcons.glyphMap; 
   focused: boolean;
 }) {
-  const scale = useSharedValue(focused ? 1.15 : 1);
-  const opacity = useSharedValue(focused ? 1 : 0.6);
-  
-  React.useEffect(() => {
-    scale.value = withSpring(focused ? 1.15 : 1, VanshSpring.gentle);
-    opacity.value = withSpring(focused ? 1 : 0.6, VanshSpring.gentle);
-  }, [focused]);
-  
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-    opacity: opacity.value,
-  }));
-  
   return (
     <View style={styles.tabIconContainer}>
-      <Animated.Text style={[styles.tabEmoji, animatedStyle]}>
-        {emoji}
-      </Animated.Text>
+      <MaterialIcons 
+        name={iconName} 
+        size={24} 
+        color={focused ? VanshColors.suvarna[600] : VanshColors.masi[400]} 
+      />
       {focused && (
-        <View style={styles.tabDot} />
+        <View style={styles.tabIndicator} />
       )}
     </View>
   );
 }
 
 export default function TabLayout() {
+  const insets = useSafeAreaInsets();
+  const bottomPadding = Math.max(insets.bottom, 8);
+  
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: [styles.tabBar, { 
+          paddingBottom: bottomPadding,
+          height: 60 + bottomPadding,
+          marginHorizontal: 16,
+          marginBottom: Platform.OS === 'ios' ? 0 : 12,
+        }],
         tabBarActiveTintColor: VanshColors.suvarna[600],
         tabBarInactiveTintColor: VanshColors.masi[400],
         tabBarLabelStyle: styles.tabLabel,
@@ -60,79 +54,70 @@ export default function TabLayout() {
         tabBarHideOnKeyboard: true,
       }}
     >
-      {/* Time River - Home Feed */}
+      {/* Home - Dashboard Feed */}
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🏠" focused={focused} />
+            <TabIcon iconName="home" focused={focused} />
           ),
         }}
       />
       
-      {/* Smriti - Memories */}
+      {/* Memories - Photos & Stories */}
       <Tabs.Screen
         name="smriti"
         options={{
-          title: 'Smriti',
+          title: 'Memories',
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="📸" focused={focused} />
+            <TabIcon iconName="photo-library" focused={focused} />
           ),
         }}
       />
       
-      {/* Katha - Stories */}
+      {/* Katha - Hidden, accessed from Memories */}
       <Tabs.Screen
         name="katha"
         options={{
-          title: 'Katha',
-          tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🎙️" focused={focused} />
-          ),
+          href: null,
         }}
       />
       
-      {/* Vriksha - Family Tree */}
+      {/* Family Tree */}
       <Tabs.Screen
         name="vriksha"
         options={{
-          title: 'Vriksha',
+          title: 'Tree',
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🌳" focused={focused} />
+            <TabIcon iconName="account-tree" focused={focused} />
           ),
         }}
       />
       
-      {/* Parampara - Traditions */}
+      {/* Parampara - Hidden, accessed from More */}
       <Tabs.Screen
         name="parampara"
         options={{
-          title: 'Parampara',
-          tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="🪔" focused={focused} />
-          ),
+          href: null,
         }}
       />
       
-      {/* Vasiyat - Wisdom Vault */}
+      {/* Vasiyat - Hidden, accessed from More */}
       <Tabs.Screen
         name="vasiyat"
         options={{
-          title: 'Vasiyat',
-          tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="💌" focused={focused} />
-          ),
+          href: null,
         }}
       />
       
-      {/* Settings - User Profile & Preferences */}
+      {/* More Hub - Settings, Traditions, Vault, etc. */}
       <Tabs.Screen
         name="explore"
         options={{
-          title: 'Settings',
+          title: 'More',
           tabBarIcon: ({ focused }) => (
-            <TabIcon emoji="⚙️" focused={focused} />
+            <TabIcon iconName="apps" focused={focused} />
           ),
         }}
       />
@@ -142,41 +127,37 @@ export default function TabLayout() {
 
 const styles = StyleSheet.create({
   tabBar: {
-    backgroundColor: VanshColors.khadi[50],
-    borderTopWidth: 1,
-    borderTopColor: VanshColors.khadi[200],
-    height: 80,
-    paddingTop: VanshSpacing.xs,
-    paddingBottom: VanshSpacing.md,
-    shadowColor: VanshColors.masi[900],
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 8,
+    position: 'absolute',
+    backgroundColor: 'rgba(255, 255, 255, 0.97)',
+    borderTopWidth: 0,
+    borderRadius: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 12,
+    paddingTop: 6,
   },
   tabLabel: {
     fontFamily: 'System',
-    fontSize: 9,
+    fontSize: 11,
     fontWeight: '600',
-    marginTop: 1,
-    letterSpacing: -0.2,
+    marginTop: 2,
+    letterSpacing: 0.1,
   },
   tabItem: {
-    paddingTop: 2,
-    minWidth: 50,
+    paddingTop: 4,
   },
   tabIconContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+    height: 32,
   },
-  tabEmoji: {
-    fontSize: 22,
-  },
-  tabDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
+  tabIndicator: {
+    width: 20,
+    height: 3,
+    borderRadius: 1.5,
     backgroundColor: VanshColors.suvarna[500],
-    marginTop: 2,
+    marginTop: 3,
   },
 });

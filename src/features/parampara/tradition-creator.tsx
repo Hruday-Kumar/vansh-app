@@ -284,7 +284,7 @@ export function TraditionCreator({ onClose, onCreated }: TraditionCreatorProps) 
   );
   
   return (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom + 80 }]}>
       {/* Header */}
       <View style={styles.header}>
         <SilkButton variant="ghost" label="← Back" onPress={handleBack} />

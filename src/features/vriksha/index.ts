@@ -36,6 +36,25 @@ export { MemberDetailSheet } from './member-detail-sheet';
 export type { MemberDetailSheetProps } from './member-detail-sheet';
 export { QuickAddMember } from './quick-add-member';
 
+// Share Feature
+export { ImportTreeModal } from './import-tree-modal';
+export { JoinRequestFlow } from './join-request-flow';
+export {
+    decodeShareCode,
+    encodeTreeAsShareCode,
+    estimateShareCodeSize,
+    importTreeFromFile,
+    payloadToShareToken,
+    shareTreeAsFile,
+    shareTreeCode,
+    type ImportedTree,
+    type ShareMode,
+    type SharePayload,
+    type ShareToken
+} from './share-service';
+export { ShareTreeModal } from './share-tree-modal';
+export { SharedTreeView } from './shared-tree-view';
+
 // Types
 export type {
     Connector, FamilyNode,
@@ -58,3 +77,13 @@ export {
     resolveRelationship
 } from './relationship-resolver';
 
+// Tree Sync (Firebase Realtime Database)
+export {
+    disconnectSync,
+    getSyncInfo,
+    initTreeSync,
+    isTreeSynced,
+    joinSyncedTree,
+    publishTree,
+    pushTreeChanges
+} from './tree-sync-service';

@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: VanshSpacing.md,
-    paddingBottom: VanshSpacing['2xl'],
+    paddingBottom: 120,
   },
   section: {
     marginTop: VanshSpacing.lg,

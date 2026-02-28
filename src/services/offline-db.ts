@@ -115,7 +115,7 @@ export async function cacheItem(
 ): Promise<void> {
   const database = await getDatabase();
   const now = Date.now();
-  
+
   await database.runAsync(
     `INSERT OR REPLACE INTO ${table} (id, data, updated_at) VALUES (?, ?, ?)`,
     [id, JSON.stringify(data), now]
@@ -130,12 +130,12 @@ export async function getCachedItem<T>(
   id: string
 ): Promise<T | null> {
   const database = await getDatabase();
-  
+
   const result = await database.getFirstAsync<{ data: string }>(
     `SELECT data FROM ${table} WHERE id = ?`,
     [id]
   );
-  
+
   if (result?.data) {
     return JSON.parse(result.data) as T;
   }
@@ -150,12 +150,12 @@ export async function getCachedItems<T>(
   familyId: string
 ): Promise<T[]> {
   const database = await getDatabase();
-  
+
   const results = await database.getAllAsync<{ data: string }>(
     `SELECT data FROM ${table} WHERE family_id = ? ORDER BY updated_at DESC`,
     [familyId]
   );
-  
+
   return results.map(r => JSON.parse(r.data) as T);
 }
 
@@ -168,11 +168,11 @@ export async function cacheItems(
 ): Promise<void> {
   const database = await getDatabase();
   const now = Date.now();
-  
+
   const stmt = await database.prepareAsync(
     `INSERT OR REPLACE INTO ${table} (id, family_id, data, updated_at) VALUES (?, ?, ?, ?)`
   );
-  
+
   try {
     for (const item of items) {
       await stmt.executeAsync([item.id, item.familyId ?? null, JSON.stringify(item.data), now]);
@@ -257,13 +257,13 @@ export async function queueAction(
   entityId?: string
 ): Promise<number> {
   const database = await getDatabase();
-  
+
   const result = await database.runAsync(
     `INSERT INTO sync_queue (action_type, entity_type, entity_id, payload, created_at) 
      VALUES (?, ?, ?, ?, ?)`,
     [actionType, entityType, entityId ?? null, JSON.stringify(payload), Date.now()]
   );
-  
+
   console.log(`📥 Queued ${actionType} ${entityType}${entityId ? ` (${entityId})` : ''}`);
   return result.lastInsertRowId;
 }
@@ -273,7 +273,7 @@ export async function queueAction(
  */
 export async function getPendingActions(): Promise<SyncQueueItem[]> {
   const database = await getDatabase();
-  
+
   const results = await database.getAllAsync<{
     id: number;
     action_type: string;
@@ -287,7 +287,7 @@ export async function getPendingActions(): Promise<SyncQueueItem[]> {
   }>(
     `SELECT * FROM sync_queue WHERE status = 'pending' ORDER BY created_at ASC`
   );
-  
+
   return results.map(r => ({
     id: r.id,
     actionType: r.action_type as 'create' | 'update' | 'delete',
@@ -328,7 +328,7 @@ export async function failAction(id: number, error: string): Promise<void> {
  */
 export async function getQueueStats(): Promise<{ pending: number; failed: number; completed: number }> {
   const database = await getDatabase();
-  
+
   const result = await database.getFirstAsync<{ pending: number; failed: number; completed: number }>(`
     SELECT 
       SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
@@ -336,7 +336,7 @@ export async function getQueueStats(): Promise<{ pending: number; failed: number
       SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed
     FROM sync_queue
   `);
-  
+
   return result || { pending: 0, failed: 0, completed: 0 };
 }
 
@@ -346,7 +346,7 @@ export async function getQueueStats(): Promise<{ pending: number; failed: number
 export async function cleanupQueue(daysOld = 7): Promise<void> {
   const database = await getDatabase();
   const cutoff = Date.now() - (daysOld * 24 * 60 * 60 * 1000);
-  
+
   await database.runAsync(
     `DELETE FROM sync_queue WHERE status = 'completed' AND created_at < ?`,
     [cutoff]

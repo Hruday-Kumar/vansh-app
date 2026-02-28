@@ -11,6 +11,7 @@
  * - vanshapp://katha/{id}      - Open katha player
  * - vanshapp://tradition/{id}  - Open tradition detail
  * - vanshapp://invite/{code}   - Accept family invite
+ * - vanshapp://share/tree/{token} - Open shared tree view
  * - vanshapp://share/{type}/{id} - Generic share handler
  */
 
@@ -22,7 +23,7 @@ import { Platform, Share } from 'react-native';
 // TYPES
 // ============================================================================
 
-export type DeepLinkType = 'member' | 'memory' | 'katha' | 'tradition' | 'vasiyat' | 'invite';
+export type DeepLinkType = 'member' | 'memory' | 'katha' | 'tradition' | 'vasiyat' | 'invite' | 'share_tree';
 
 export interface DeepLinkParams {
   type: DeepLinkType;
@@ -60,6 +61,7 @@ const ROUTE_MAP: Record<DeepLinkType, string> = {
   tradition: '/(tabs)/parampara/detail',
   vasiyat: '/(tabs)/vasiyat/viewer',
   invite: '/invite',
+  share_tree: '/(tabs)/vriksha',
 };
 
 // ============================================================================
@@ -117,6 +119,15 @@ export function parseDeepLink(url: string): DeepLinkParams | null {
     
     if (pathParts.length < 2) return null;
     
+    // Handle share/tree/{token} → type='share_tree', id={token}
+    if (pathParts[0] === 'share' && pathParts[1] === 'tree' && pathParts.length >= 3) {
+      return {
+        type: 'share_tree',
+        id: pathParts[2],
+        data: queryParams as Record<string, string>,
+      };
+    }
+    
     const [type, id] = pathParts;
     
     // Validate type
@@ -137,7 +148,7 @@ export function parseDeepLink(url: string): DeepLinkParams | null {
  * Check if a string is a valid deep link type
  */
 function isValidDeepLinkType(type: string): type is DeepLinkType {
-  return ['member', 'memory', 'katha', 'tradition', 'vasiyat', 'invite'].includes(type);
+  return ['member', 'memory', 'katha', 'tradition', 'vasiyat', 'invite', 'share_tree'].includes(type);
 }
 
 // ============================================================================
@@ -188,6 +199,11 @@ export async function handleDeepLink(url: string): Promise<boolean> {
     return handleInviteLink(params.id, params.data);
   }
   
+  // Handle shared tree links
+  if (params.type === 'share_tree') {
+    return handleShareTreeLink(params.id);
+  }
+  
   navigateToDeepLink(params);
   return true;
 }
@@ -204,6 +220,18 @@ async function handleInviteLink(code: string, data?: Record<string, string>): Pr
   // 3. If invalid, show error
   
   router.push(`/invite?code=${code}` as any);
+  return true;
+}
+
+/**
+ * Handle shared tree link — validates token and navigates to tree view
+ */
+async function handleShareTreeLink(token: string): Promise<boolean> {
+  console.log('[DeepLink] Processing share tree token:', token);
+  
+  // Navigate to vriksha tab with share token as param
+  // The tree screen can then validate + show SharedTreeView
+  router.push(`/(tabs)/vriksha?shareToken=${token}` as any);
   return true;
 }
 

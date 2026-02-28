@@ -89,10 +89,11 @@ if (isProduction) {
 // Rate limiting - general
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: isProduction ? 100 : 1000, // limit per IP
+  max: isProduction ? 100 : 10_000, // very generous in dev to avoid spurious 429s during hot reload / polling
   message: { success: false, error: { code: 'RATE_LIMITED', message: 'Too many requests' } },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: (req) => !isProduction && (req.ip === '127.0.0.1' || req.ip === '::1' || req.ip === '::ffff:127.0.0.1'),
 });
 
 // Rate limiting - auth endpoints (stricter)

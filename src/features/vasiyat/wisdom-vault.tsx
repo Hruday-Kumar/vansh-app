@@ -136,7 +136,7 @@ export function WisdomVault({ vasiyatList, onVasiyatPress, onCreateNew }: Wisdom
       
       {/* Create FAB */}
       <Pressable
-        style={[styles.fab, { bottom: insets.bottom + VanshSpacing.lg }]}
+        style={[styles.fab, { bottom: insets.bottom + 90 }]}
         onPress={onCreateNew}
       >
         <SacredText variant="title" style={styles.fabIcon}>✉️</SacredText>

@@ -33,6 +33,14 @@ export function authenticate(req: Request, res: Response, next: NextFunction) {
     const token = authHeader.split(' ')[1];
     const secret = process.env.JWT_SECRET || 'vansh_secret';
     
+    // Debug: log token info to help diagnose issues
+    console.log('🔑 Auth debug:', {
+      tokenPreview: token.substring(0, 20) + '...',
+      tokenLength: token.length,
+      secretUsed: secret === 'vansh_secret' ? 'default (vansh_secret)' : 'from .env',
+      isJwtFormat: token.split('.').length === 3,
+    });
+    
     const decoded = jwt.verify(token, secret) as AuthPayload;
     req.user = decoded;
     

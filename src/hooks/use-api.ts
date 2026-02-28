@@ -3,11 +3,11 @@
  * React hooks for data fetching and mutations
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { API_URL } from '../config/api';
 import { api } from '../services/api';
 import { useAuthStore, useFamilyStore, useKathaStore, useMemoryStore } from '../state';
-import type { Vasiyat, VrikshaMember } from '../types';
+import type { Katha, Vasiyat, VrikshaMember } from '../types';
 
 // ═══════════════════════════════════════════════════════════
 // AUTH HOOKS
@@ -184,74 +184,61 @@ export function useFamilyData() {
       const membersData = await membersRes.json();
       
       if (membersData.success) {
-        // Also load relationships for each member
-        const membersWithRelationships = await Promise.all(
-          membersData.data.map(async (m: any) => {
-            try {
-              const relRes = await fetch(`${API_URL}/members/${m.id}/relationships`, {
-                headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` }
-              });
-              const relData = await relRes.json();
-              
-              // Map relationships - figure out which member is the "other" one
-              const mappedRelationships = relData.success ? relData.data.map((r: any) => {
-                // If this member is fromMember, the related one is toMember, and vice versa
-                const relatedMemberId = r.fromMember?.id === m.id 
-                  ? r.toMember?.id 
-                  : r.fromMember?.id;
+        // Build a map of member data first
+        const memberMap = new Map<string, any>();
+        for (const m of membersData.data) {
+          memberMap.set(m.id, {
+            id: m.id,
+            firstName: m.firstName,
+            lastName: m.lastName,
+            maidenName: m.maidenName,
+            gender: m.gender,
+            birthDate: m.birthDate,
+            birthPlace: m.birthPlace,
+            deathDate: m.deathDate,
+            isAlive: m.isAlive,
+            avatarUri: m.avatarUri,
+            bio: m.bio,
+            occupation: m.occupation,
+            currentCity: m.currentCity,
+            relationships: [],
+          });
+        }
+        
+        // Load all relationships in one batch call per member (limit concurrency to 3)
+        const memberIds = membersData.data.map((m: any) => m.id);
+        const batchSize = 3;
+        for (let i = 0; i < memberIds.length; i += batchSize) {
+          const batch = memberIds.slice(i, i + batchSize);
+          const results = await Promise.all(
+            batch.map(async (id: string) => {
+              try {
+                const relRes = await fetch(`${API_URL}/members/${id}/relationships`, {
+                  headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` }
+                });
+                const relData = await relRes.json();
+                return { id, data: relData };
+              } catch {
+                return { id, data: { success: false, data: [] } };
+              }
+            })
+          );
+          for (const { id, data: relData } of results) {
+            const member = memberMap.get(id);
+            if (member && relData.success) {
+              member.relationships = relData.data.map((r: any) => {
+                const relatedMemberId = r.fromMember?.id === id ? r.toMember?.id : r.fromMember?.id;
                 return {
                   type: r.type,
                   memberId: relatedMemberId,
-                  prana: {
-                    strength: r.pranaStrength || 0,
-                    sharedMemories: [],
-                    sharedKathas: [],
-                    pulseIntensity: 0,
-                    glowColor: '#6366F1',
-                  }
+                  prana: { strength: r.pranaStrength || 0, sharedMemories: [], sharedKathas: [], pulseIntensity: 0, glowColor: '#6366F1' }
                 };
-              }).filter((r: any) => r.memberId) : [];
-              
-              return {
-                id: m.id,
-                firstName: m.firstName,
-                lastName: m.lastName,
-                maidenName: m.maidenName,
-                gender: m.gender,
-                birthDate: m.birthDate,
-                birthPlace: m.birthPlace,
-                deathDate: m.deathDate,
-                isAlive: m.isAlive,
-                avatarUri: m.avatarUri,
-                bio: m.bio,
-                occupation: m.occupation,
-                currentCity: m.currentCity,
-                // Include relationships
-                relationships: mappedRelationships,
-              };
-            } catch (err) {
-              console.warn(`Failed to load relationships for member ${m.id}:`, err);
-              return {
-                id: m.id,
-                firstName: m.firstName,
-                lastName: m.lastName,
-                maidenName: m.maidenName,
-                gender: m.gender,
-                birthDate: m.birthDate,
-                birthPlace: m.birthPlace,
-                deathDate: m.deathDate,
-                isAlive: m.isAlive,
-                avatarUri: m.avatarUri,
-                bio: m.bio,
-                occupation: m.occupation,
-                currentCity: m.currentCity,
-                relationships: [],
-              };
+              }).filter((r: any) => r.memberId);
             }
-          })
-        );
+          }
+        }
         
-        setMembers(membersWithRelationships);
+        setMembers(Array.from(memberMap.values()));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load family data');
@@ -277,6 +264,14 @@ export function useMemories() {
   const { recentMemories, setMemories, addMemory } = useMemoryStore();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [syncInfo, setSyncInfo] = useState<{
+    totalMemories: number;
+    contributors: number;
+    lastSyncAt: string | null;
+  }>({ totalMemories: 0, contributors: 0, lastSyncAt: null });
+
+  // Ref keeps the latest lastSyncAt accessible inside the stable interval callback
+  const lastSyncAtRef = useRef<string | null>(null);
   
   const loadMemories = useCallback(async () => {
     setIsLoading(true);
@@ -288,6 +283,7 @@ export function useMemories() {
       
       if (data.success) {
         setMemories(data.data);
+        setSyncInfo(prev => ({ ...prev, lastSyncAt: new Date().toISOString() }));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load memories');
@@ -295,6 +291,40 @@ export function useMemories() {
       setIsLoading(false);
     }
   }, [setMemories]);
+  
+  // Keep the ref in sync with state so the stable interval callback reads latest value
+  useEffect(() => {
+    lastSyncAtRef.current = syncInfo.lastSyncAt;
+  }, [syncInfo.lastSyncAt]);
+
+  // Check for new family memories (lightweight polling)
+  // Only depends on loadMemories (stable) — reads lastSyncAt via ref to avoid
+  // re-creating the interval every time syncInfo changes.
+  const checkFamilySync = useCallback(async () => {
+    try {
+      const since = lastSyncAtRef.current || new Date(0).toISOString();
+      const res = await fetch(`${API_URL}/memories/sync/check?since=${encodeURIComponent(since)}`, {
+        headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` }
+      });
+      if (!res.ok) return; // e.g. rate limit hit — skip silently
+      const data = await res.json();
+
+      if (data.success && data.data) {
+        setSyncInfo(prev => ({
+          ...prev,
+          totalMemories: data.data.totalMemories,
+          contributors: data.data.contributors,
+        }));
+
+        // Auto-refresh only when family has genuinely added new memories
+        if (data.data.hasNewMemories && data.data.newCount > 0) {
+          await loadMemories();
+        }
+      }
+    } catch {
+      // Silently fail sync check — not critical
+    }
+  }, [loadMemories]); // stable — does NOT depend on syncInfo
   
   const uploadMemory = useCallback(async (
     file: Blob,
@@ -314,17 +344,33 @@ export function useMemories() {
     const data = await res.json();
     
     if (data.success) {
-      loadMemories(); // Refresh list
+      loadMemories(); // Refresh list for all family members on next sync
       return data.data;
     }
     throw new Error(data.error?.message || 'Upload failed');
   }, [loadMemories]);
   
+  // Initial load
   useEffect(() => {
     loadMemories();
   }, [loadMemories]);
   
-  return { memories: recentMemories, isLoading, error, refresh: loadMemories, uploadMemory };
+  // Poll for family sync every 60 seconds while screen is active.
+  // checkFamilySync is now stable so this effect runs exactly once.
+  useEffect(() => {
+    const interval = setInterval(checkFamilySync, 300_000); // 5 minutes
+    return () => clearInterval(interval);
+  }, [checkFamilySync]);
+  
+  return {
+    memories: recentMemories,
+    isLoading,
+    error,
+    refresh: loadMemories,
+    uploadMemory,
+    syncInfo,
+    checkFamilySync,
+  };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -344,10 +390,16 @@ export function useKathas() {
       });
       const data = await res.json();
       
-      if (data.success) {
-        setKathas(data.data);
+      if (data.success && Array.isArray(data.data) && data.data.length > 0) {
+        // Merge API kathas with local ones (keep locally recorded kathas)
+        const apiKathas: Katha[] = data.data;
+        const localKathas = useKathaStore.getState().recentKathas.filter(
+          (local) => !apiKathas.some((api) => api.id === local.id)
+        );
+        setKathas([...apiKathas, ...localKathas]);
       }
     } catch (err) {
+      // Silently fail - local kathas persist via store
       setError(err instanceof Error ? err.message : 'Failed to load kathas');
     } finally {
       setIsLoading(false);

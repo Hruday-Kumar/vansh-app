@@ -13,7 +13,15 @@ const controller = new MemoryController();
 // All routes require authentication
 router.use(authenticate);
 
-// Memory CRUD
+// ─── Fixed-path routes MUST come before /:memoryId ───────────────────────────
+
+// Family sync - check for new memories since a given timestamp
+router.get('/sync/check', controller.checkSync);
+
+// Time River view
+router.get('/timeline/river', controller.getTimeRiver);
+
+// ─── Memory CRUD ──────────────────────────────────────────────────────────────
 router.get('/', controller.getMemories);
 router.get('/:memoryId', controller.getMemory);
 router.post('/', uploadMemory, controller.uploadMemory);
@@ -29,9 +37,6 @@ router.delete('/:memoryId/tag-members/:memberId', controller.untagMember);
 
 // Favorites
 router.post('/:memoryId/favorite', controller.toggleFavorite);
-
-// Time River view
-router.get('/timeline/river', controller.getTimeRiver);
 
 // AI Analysis
 router.post('/:memoryId/analyze', controller.analyzeMemory);

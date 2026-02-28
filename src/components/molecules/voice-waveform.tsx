@@ -12,7 +12,7 @@ import { VanshColors, VanshRadius, VanshSpacing } from '../../theme';
 import { SacredText } from '../atoms/sacred-text';
 
 interface VoiceWaveformProps {
-  waveform: number[]; // Array of amplitude values 0-1
+  waveform?: number[]; // Array of amplitude values 0-1
   duration: number; // Total duration in seconds
   currentPosition?: number; // Current playback position 0-1
   isPlaying?: boolean;
@@ -28,7 +28,7 @@ const MIN_BAR_HEIGHT = 4;
 const MAX_BAR_HEIGHT = 40;
 
 export function VoiceWaveform({
-  waveform,
+  waveform = [],
   duration,
   currentPosition = 0,
   isPlaying = false,
@@ -87,13 +87,13 @@ export function VoiceWaveform({
   return (
     <View style={[styles.container, style]}>
       {/* Narrator name */}
-      {narratorName && (
+      {narratorName ? (
         <View style={styles.header}>
           <SacredText variant="caption" color="gold">
             🎙️ {narratorName}
           </SacredText>
         </View>
-      )}
+      ) : null}
       
       {/* Waveform */}
       <Pressable onPress={onPlayPause} style={styles.waveformContainer}>

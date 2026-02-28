@@ -1,25 +1,27 @@
 /**
- * 🪷 VANSH HOME - Time River Feed
- * The sacred stream of family moments
+ * VANSH HOME - Dashboard Feed
+ * Modern card-based home with quick actions and activity
  */
 
+import { MaterialIcons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
+import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     FlatList,
+    Pressable,
     RefreshControl,
     StyleSheet,
+    Text,
     View,
 } from 'react-native';
-import Animated, {
-    FadeInDown,
-} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { HeritageCard, MemberAvatar, SacredText } from '../../src/components';
+import { MemberAvatar } from '../../src/components';
 import { API_URL } from '../../src/config/api';
+import { useVrikshaStore } from '../../src/features/vriksha';
 import { useFamilyData, useKathas, useMemories } from '../../src/hooks';
 import { useAuthStore, useFamilyStore } from '../../src/state';
-import { VanshColors, VanshRadius, VanshSpacing } from '../../src/theme';
+import { VanshColors } from '../../src/theme';
 
 // Simplified feed item type
 interface FeedItem {
@@ -33,20 +35,24 @@ interface FeedItem {
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const { user } = useAuthStore();
   const { family, getMember, membersList } = useFamilyStore();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Vriksha stats
+  const { members: treeMembers } = useVrikshaStore();
+  const totalTreeMembers = treeMembers.size;
   
   // Load family data on mount
   const { refresh: refreshFamily } = useFamilyData();
   const { kathas, refresh: refreshKathas } = useKathas();
   const { memories, refresh: refreshMemories } = useMemories();
   
-  // Build feed items from all sources
+  // Build feed items from recent activity only
   const feedItems = useMemo((): FeedItem[] => {
     const items: FeedItem[] = [];
     
-    // Add kathas to feed
     (kathas || []).forEach((katha: any) => {
       items.push({
         id: `katha-${katha.id}`,
@@ -57,14 +63,11 @@ export default function HomeScreen() {
       });
     });
     
-    // Add memories to feed
     (memories || []).forEach((memory: any) => {
-      // Handle both full URLs and relative paths
       let thumbnailUri = memory.uri;
       if (thumbnailUri && !thumbnailUri.startsWith('http')) {
         thumbnailUri = `${API_URL.replace('/api', '')}${memory.uri}`;
       }
-      
       items.push({
         id: `memory-${memory.id}`,
         type: 'memory',
@@ -75,31 +78,16 @@ export default function HomeScreen() {
       });
     });
     
-    // Add members joined
-    (membersList || []).forEach((member: any) => {
-      items.push({
-        id: `member-${member.id}`,
-        type: 'member_joined',
-        date: member.createdAt || new Date().toISOString(),
-        preview: `${member.firstName} ${member.lastName} joined the family tree`,
-        members: [member.id],
-      });
-    });
-    
-    // Sort by date descending
     items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    
-    return items;
-  }, [kathas, memories, membersList]);
+    return items.slice(0, 50); // Cap feed items
+  }, [kathas, memories]);
   
-  // Get current user's member info for display
   const currentMember = user ? getMember(user.memberId) : null;
   const userName = currentMember 
-    ? `${currentMember.firstName} ${currentMember.lastName}`
-    : user?.email?.split('@')[0] || 'Welcome';
+    ? currentMember.firstName
+    : user?.email?.split('@')[0] || 'there';
   
   useEffect(() => {
-    // Load all family data when screen mounts
     if (user) {
       refreshFamily();
       refreshKathas();
@@ -116,61 +104,70 @@ export default function HomeScreen() {
     }
   }, [refreshFamily, refreshKathas, refreshMemories]);
   
-  const renderItem = useCallback(({ item, index }: { item: FeedItem; index: number }) => {
-    // Get first member from the item's members array (with safety check)
+  const renderItem = useCallback(({ item }: { item: FeedItem; index: number }) => {
     const primaryMemberId = item.members?.[0];
     const member = primaryMemberId ? getMember(primaryMemberId as any) : null;
     
     return (
-      <Animated.View entering={FadeInDown.delay(index * 60).springify()}>
-        <TimeRiverCard
-          item={item}
-          memberName={member ? `${member.firstName} ${member.lastName}` : 'Family Member'}
-          memberAvatar={member?.avatarUri}
-        />
-      </Animated.View>
+      <ActivityCard
+        item={item}
+        memberName={member ? `${member.firstName} ${member.lastName}` : 'Family Member'}
+        memberAvatar={member?.avatarUri}
+      />
     );
   }, [getMember]);
   
   const ListHeader = useCallback(() => (
-    <View style={styles.header}>
+    <View style={styles.headerContainer}>
+      {/* Greeting */}
       <View style={styles.greeting}>
-        <SacredText variant="caption" color="muted">
-          {getGreeting()},
-        </SacredText>
-        <SacredText variant="heading" color="gold">
-          {userName}
-        </SacredText>
+        <View>
+          <Text style={styles.greetingTime}>{getGreeting()}</Text>
+          <Text style={styles.greetingName}>{userName}</Text>
+        </View>
+        <MemberAvatar
+          uri={currentMember?.avatarUri}
+          name={userName}
+          size="md"
+        />
       </View>
       
-      {/* Family name */}
-      {family && (
-        <HeritageCard variant="outlined" style={styles.familyCard}>
-          <SacredText variant="subhead" color="primary" align="center">
-            🏠 {family.name}
-          </SacredText>
-          <SacredText variant="caption" color="muted" align="center">
-            Your family's living legacy
-          </SacredText>
-        </HeritageCard>
+      {/* Family Stats Bar */}
+      {(family || totalTreeMembers > 0) && (
+        <View style={styles.statsBar}>
+          <View style={styles.statsBarInner}>
+            <StatBubble value={totalTreeMembers || membersList.length} label="Members" icon="people" />
+            <StatBubble value={memories?.length || 0} label="Memories" icon="photo-library" />
+            <StatBubble value={kathas?.length || 0} label="Stories" icon="mic" />
+          </View>
+        </View>
       )}
       
-      {/* Section title */}
-      <SacredText variant="label" color="muted" style={styles.sectionTitle}>
-        Time River
-      </SacredText>
+      {/* Quick Actions */}
+      <View style={styles.quickActions}>
+        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <View style={styles.actionRow}>
+          <QuickAction icon="add-a-photo" label="Add Memory" color="#3B82F6" onPress={() => router.push('/(tabs)/smriti')} />
+          <QuickAction icon="person-add" label="Add Member" color="#10B981" onPress={() => router.push('/(tabs)/vriksha')} />
+          <QuickAction icon="mic" label="Record" color="#8B5CF6" onPress={() => router.push('/(tabs)/explore')} />
+          <QuickAction icon="account-tree" label="View Tree" color="#F59E0B" onPress={() => router.push('/(tabs)/vriksha')} />
+        </View>
+      </View>
+      
+      {/* Activity Section */}
+      <View style={styles.activityHeader}>
+        <Text style={styles.sectionTitle}>Recent Activity</Text>
+      </View>
     </View>
-  ), [userName, family]);
+  ), [userName, family, totalTreeMembers, membersList.length, memories?.length, kathas?.length, currentMember]);
   
   const ListEmpty = useCallback(() => (
     <View style={styles.emptyContainer}>
-      <SacredText variant="hero" color="gold">🪷</SacredText>
-      <SacredText variant="title" color="primary" align="center">
-        Your Time River is Empty
-      </SacredText>
-      <SacredText variant="body" color="secondary" align="center" style={styles.emptyText}>
-        Start adding memories, stories, and family members to see your river flow.
-      </SacredText>
+      <MaterialIcons name="history" size={48} color={VanshColors.masi[200]} />
+      <Text style={styles.emptyTitle}>No Activity Yet</Text>
+      <Text style={styles.emptySubtitle}>
+        Start adding memories, stories, and family members to see your activity here.
+      </Text>
     </View>
   ), []);
   
@@ -187,6 +184,9 @@ export default function HomeScreen() {
           { paddingBottom: insets.bottom + 100 },
         ]}
         showsVerticalScrollIndicator={false}
+        removeClippedSubviews={true}
+        windowSize={7}
+        maxToRenderPerBatch={5}
         refreshControl={
           <RefreshControl
             refreshing={isRefreshing}
@@ -199,23 +199,46 @@ export default function HomeScreen() {
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// Time River Card Component
-// ─────────────────────────────────────────────────────────
+// ─── Sub Components ──────────────────────────────────────
 
-interface TimeRiverCardProps {
+function StatBubble({ value, label, icon }: { 
+  value: number; label: string; icon: keyof typeof MaterialIcons.glyphMap 
+}) {
+  return (
+    <View style={styles.statBubble}>
+      <MaterialIcons name={icon} size={18} color={VanshColors.suvarna[600]} />
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function QuickAction({ icon, label, color, onPress }: { 
+  icon: keyof typeof MaterialIcons.glyphMap; label: string; color: string; onPress: () => void 
+}) {
+  return (
+    <Pressable style={styles.quickActionItem} onPress={onPress}>
+      <View style={[styles.quickActionIcon, { backgroundColor: color + '12' }]}>
+        <MaterialIcons name={icon} size={22} color={color} />
+      </View>
+      <Text style={styles.quickActionLabel}>{label}</Text>
+    </Pressable>
+  );
+}
+
+interface ActivityCardProps {
   item: FeedItem;
   memberName: string;
   memberAvatar?: string;
 }
 
-function TimeRiverCard({ item, memberName, memberAvatar }: TimeRiverCardProps) {
-  const getIcon = () => {
+function ActivityCard({ item, memberName, memberAvatar }: ActivityCardProps) {
+  const getIconConfig = () => {
     switch (item.type) {
-      case 'memory': return '📸';
-      case 'katha': return '🎙️';
-      case 'member_joined': return '👤';
-      default: return '✨';
+      case 'memory': return { name: 'photo' as const, color: '#3B82F6', bg: '#EFF6FF' };
+      case 'katha': return { name: 'mic' as const, color: '#8B5CF6', bg: '#F5F3FF' };
+      case 'member_joined': return { name: 'person-add' as const, color: '#10B981', bg: '#ECFDF5' };
+      default: return { name: 'star' as const, color: '#F59E0B', bg: '#FFF7ED' };
     }
   };
   
@@ -228,55 +251,47 @@ function TimeRiverCard({ item, memberName, memberAvatar }: TimeRiverCardProps) {
     }
   };
   
-  const timeAgo = formatTimeAgo(item.date);
+  const iconConfig = getIconConfig();
   
   return (
-    <HeritageCard variant="elevated" style={styles.riverCard}>
-      <View style={styles.cardHeader}>
-        <MemberAvatar
-          uri={memberAvatar}
-          name={memberName}
-          size="sm"
-        />
-        <View style={styles.cardMeta}>
-          <SacredText variant="body" color="primary" numberOfLines={1}>
-            {memberName}
-          </SacredText>
-          <SacredText variant="caption" color="muted">
-            {getAction()} • {timeAgo}
-          </SacredText>
+    <View style={styles.activityCard}>
+      <View style={styles.activityCardRow}>
+        <MemberAvatar uri={memberAvatar} name={memberName} size="sm" />
+        <View style={styles.activityMeta}>
+          <Text style={styles.activityName} numberOfLines={1}>{memberName}</Text>
+          <Text style={styles.activityAction}>{getAction()} · {formatTimeAgo(item.date)}</Text>
         </View>
-        <SacredText variant="title">{getIcon()}</SacredText>
+        <View style={[styles.activityTypeBadge, { backgroundColor: iconConfig.bg }]}>
+          <MaterialIcons name={iconConfig.name} size={16} color={iconConfig.color} />
+        </View>
       </View>
       
-      {/* Preview content */}
-      <View style={styles.cardContent}>
-        {item.thumbnailUri && (
-          <Image
-            source={{ uri: item.thumbnailUri }}
-            style={styles.previewImage}
-            contentFit="cover"
-          />
-        )}
-        {item.preview && (
-          <SacredText variant="body" color="secondary" numberOfLines={2}>
-            {item.preview}
-          </SacredText>
-        )}
-      </View>
-    </HeritageCard>
+      {item.thumbnailUri && (
+        <Image
+          source={{ uri: item.thumbnailUri }}
+          style={styles.activityImage}
+          contentFit="cover"
+          recyclingKey={`feed-${item.id}`}
+          cachePolicy="memory-disk"
+        />
+      )}
+      {item.preview && !item.thumbnailUri && (
+        <Text style={styles.activityPreview} numberOfLines={2}>{item.preview}</Text>
+      )}
+      {item.preview && item.thumbnailUri && (
+        <Text style={styles.activityCaption} numberOfLines={1}>{item.preview}</Text>
+      )}
+    </View>
   );
 }
 
-// ─────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────
 
 function getGreeting() {
   const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  return 'Good evening';
+  if (hour < 12) return 'Good morning,';
+  if (hour < 17) return 'Good afternoon,';
+  return 'Good evening,';
 }
 
 function formatTimeAgo(date: Date | string) {
@@ -297,53 +312,178 @@ function formatTimeAgo(date: Date | string) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: VanshColors.khadi[50],
+    backgroundColor: '#FAFAF9',
   },
   listContent: {
     flexGrow: 1,
   },
-  header: {
-    padding: VanshSpacing.lg,
+  
+  // Header
+  headerContainer: {
+    paddingHorizontal: 20,
   },
   greeting: {
-    marginBottom: VanshSpacing.md,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 20,
+    paddingBottom: 16,
   },
-  familyCard: {
-    marginBottom: VanshSpacing.lg,
+  greetingTime: {
+    fontSize: 15,
+    color: VanshColors.masi[400],
+    fontWeight: '500',
+  },
+  greetingName: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: VanshColors.masi[800],
+    letterSpacing: -0.5,
+    marginTop: 2,
+  },
+  
+  // Stats
+  statsBar: {
+    marginBottom: 20,
+  },
+  statsBarInner: {
+    flexDirection: 'row',
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    padding: 16,
+    justifyContent: 'space-around',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  statBubble: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  statValue: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: VanshColors.masi[800],
+  },
+  statLabel: {
+    fontSize: 11,
+    color: VanshColors.masi[400],
+    fontWeight: '500',
+  },
+  
+  // Quick Actions
+  quickActions: {
+    marginBottom: 24,
   },
   sectionTitle: {
-    marginBottom: VanshSpacing.sm,
+    fontSize: 16,
+    fontWeight: '700',
+    color: VanshColors.masi[700],
+    marginBottom: 12,
   },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  actionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  quickActionItem: {
     alignItems: 'center',
-    padding: VanshSpacing.xl,
-    minHeight: 400,
+    flex: 1,
   },
-  emptyText: {
-    marginTop: VanshSpacing.md,
-    maxWidth: 280,
+  quickActionIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
   },
-  riverCard: {
-    marginHorizontal: VanshSpacing.lg,
-    marginBottom: VanshSpacing.md,
+  quickActionLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: VanshColors.masi[600],
+    textAlign: 'center',
   },
-  cardHeader: {
+  
+  // Activity
+  activityHeader: {
+    marginBottom: 4,
+  },
+  activityCard: {
+    marginHorizontal: 20,
+    marginBottom: 12,
+    backgroundColor: '#FFF',
+    borderRadius: 20,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  activityCardRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: VanshSpacing.sm,
+    gap: 10,
   },
-  cardMeta: {
+  activityMeta: {
     flex: 1,
   },
-  cardContent: {
-    marginTop: VanshSpacing.md,
-    gap: VanshSpacing.sm,
+  activityName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: VanshColors.masi[800],
   },
-  previewImage: {
+  activityAction: {
+    fontSize: 12,
+    color: VanshColors.masi[400],
+    marginTop: 1,
+  },
+  activityTypeBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  activityImage: {
     width: '100%',
     height: 180,
-    borderRadius: VanshRadius.md,
+    borderRadius: 14,
+    marginTop: 12,
+  },
+  activityPreview: {
+    fontSize: 14,
+    color: VanshColors.masi[600],
+    lineHeight: 20,
+    marginTop: 10,
+  },
+  activityCaption: {
+    fontSize: 13,
+    color: VanshColors.masi[500],
+    marginTop: 8,
+  },
+  
+  // Empty
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 40,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: VanshColors.masi[600],
+    marginTop: 16,
+  },
+  emptySubtitle: {
+    fontSize: 14,
+    color: VanshColors.masi[400],
+    textAlign: 'center',
+    lineHeight: 20,
+    marginTop: 8,
+    maxWidth: 280,
   },
 });

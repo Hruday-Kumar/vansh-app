@@ -4,16 +4,16 @@
 
 import React, { useState } from 'react';
 import {
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
+    Alert,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    TextInput,
+    View,
 } from 'react-native';
 import Animated, {
-  FadeIn,
-  FadeInDown,
+    FadeIn,
+    FadeInDown,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { MemberAvatar, SacredText, SilkButton } from '../../components';
@@ -328,7 +328,7 @@ export function VasiyatCreator({ onClose, onCreated }: VasiyatCreatorProps) {
   };
   
   return (
-    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+    <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom + 80 }]}>
       {/* Header */}
       <View style={styles.header}>
         <SilkButton variant="ghost" label="← Back" onPress={handleBack} />

@@ -1,17 +1,12 @@
 /**
- * 🌳 ANIMATED MEMBER NODE - Stunning Visual Family Member Card
- * ═══════════════════════════════════════════════════════════
+ * ANIMATED MEMBER NODE - Clean Family Member Card
  * 
  * Features:
- * ✓ Pulse animation for selected nodes
- * ✓ Glow effect for living members
- * ✓ Smooth scale transitions
- * ✓ Gender-based gradient backgrounds
- * ✓ Deceased memorial styling
- * ✓ Photo with fallback initials
- * ✓ Relationship badge
- * 
- * PHILOSOPHY: "Each node is a living soul in the tree of life"
+ * - Smooth scale transitions on press
+ * - Gender-based gradient backgrounds
+ * - Clean card design with minimal borders
+ * - Photo with fallback initials
+ * - Relationship badge overlay
  */
 
 import { LinearGradient } from 'expo-linear-gradient';
@@ -19,17 +14,14 @@ import React, { memo, useEffect } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming
+    runOnJS,
+    useAnimatedStyle,
+    useSharedValue,
+    withSpring,
+    withTiming
 } from 'react-native-reanimated';
 import { VanshColors } from '../../theme';
 import type { LayoutNode } from './types';
-
-// ═══════════════════════════════════════════════════════════
-// TYPES
-// ═══════════════════════════════════════════════════════════
 
 interface AnimatedMemberNodeProps {
   node: LayoutNode;
@@ -41,51 +33,43 @@ interface AnimatedMemberNodeProps {
   onLongPress?: (node: LayoutNode) => void;
 }
 
-// ═══════════════════════════════════════════════════════════
-// CONSTANTS
-// ═══════════════════════════════════════════════════════════
-
 const NODE_WIDTH = 120;
 const NODE_HEIGHT = 150;
 
 const COLORS = {
   male: {
-    gradient: ['#3B82F6', '#1D4ED8'] as const,
-    bg: '#DBEAFE',
-    border: '#3B82F6',
-    glow: 'rgba(59, 130, 246, 0.5)',
+    gradient: ['#60A5FA', '#3B82F6'] as const,
+    bg: '#EFF6FF',
+    border: '#93C5FD',
+    accent: '#3B82F6',
   },
   female: {
-    gradient: ['#EC4899', '#BE185D'] as const,
-    bg: '#FCE7F3',
-    border: '#EC4899',
-    glow: 'rgba(236, 72, 153, 0.5)',
+    gradient: ['#F472B6', '#EC4899'] as const,
+    bg: '#FDF2F8',
+    border: '#F9A8D4',
+    accent: '#EC4899',
   },
   other: {
-    gradient: ['#8B5CF6', '#6D28D9'] as const,
-    bg: '#EDE9FE',
-    border: '#8B5CF6',
-    glow: 'rgba(139, 92, 246, 0.5)',
+    gradient: ['#A78BFA', '#8B5CF6'] as const,
+    bg: '#F5F3FF',
+    border: '#C4B5FD',
+    accent: '#8B5CF6',
   },
   deceased: {
-    gradient: ['#6B7280', '#4B5563'] as const,
-    bg: '#F3F4F6',
-    border: '#9CA3AF',
-    glow: 'rgba(107, 114, 128, 0.3)',
+    gradient: ['#9CA3AF', '#6B7280'] as const,
+    bg: '#F9FAFB',
+    border: '#D1D5DB',
+    accent: '#6B7280',
   },
   root: {
-    border: '#D97706',
-    glow: 'rgba(217, 119, 6, 0.6)',
+    border: '#F59E0B',
+    bg: '#FFFBEB',
   },
   selected: {
     border: '#10B981',
-    glow: 'rgba(16, 185, 129, 0.6)',
+    bg: '#ECFDF5',
   },
 };
-
-// ═══════════════════════════════════════════════════════════
-// UTILITY FUNCTIONS
-// ═══════════════════════════════════════════════════════════
 
 function getInitials(firstName?: string, lastName?: string): string {
   const first = firstName?.trim().charAt(0).toUpperCase() || '';
@@ -100,10 +84,6 @@ function getColorScheme(gender: string, isAlive: boolean) {
   return COLORS.other;
 }
 
-// ═══════════════════════════════════════════════════════════
-// ANIMATED COMPONENT
-// ═══════════════════════════════════════════════════════════
-
 export const AnimatedMemberNode = memo(function AnimatedMemberNode({
   node,
   isRoot,
@@ -117,26 +97,23 @@ export const AnimatedMemberNode = memo(function AnimatedMemberNode({
   const isAlive = person?.isAlive ?? true;
   const colorScheme = getColorScheme(node.gender, isAlive);
   
-  // Animation values
   const opacity = useSharedValue(0);
   const pressScale = useSharedValue(1);
   
-  // Simple fade-in on mount
   useEffect(() => {
-    opacity.value = withTiming(1, { duration: 400 });
+    opacity.value = withTiming(1, { duration: 350 });
   }, []);
   
-  // Gesture handlers
   const tapGesture = Gesture.Tap()
     .onBegin(() => {
-      pressScale.value = withTiming(0.96, { duration: 100 });
+      pressScale.value = withSpring(0.93, { damping: 15, stiffness: 300 });
     })
     .onEnd(() => {
-      pressScale.value = withTiming(1, { duration: 150 });
+      pressScale.value = withSpring(1, { damping: 12, stiffness: 200 });
       runOnJS(onPress)(node);
     })
     .onFinalize(() => {
-      pressScale.value = withTiming(1, { duration: 150 });
+      pressScale.value = withSpring(1, { damping: 12, stiffness: 200 });
     });
   
   const longPressGesture = Gesture.LongPress()
@@ -149,29 +126,25 @@ export const AnimatedMemberNode = memo(function AnimatedMemberNode({
   
   const composed = Gesture.Exclusive(longPressGesture, tapGesture);
   
-  // Animated styles
   const containerStyle = useAnimatedStyle(() => ({
     opacity: opacity.value,
-    transform: [
-      { scale: pressScale.value },
-    ],
+    transform: [{ scale: pressScale.value }],
   }));
   
-  // Determine border color
-  const borderColor = isRoot 
-    ? COLORS.root.border 
-    : isSelected 
-      ? COLORS.selected.border 
-      : colorScheme.border;
+  // Visual states
+  const borderColor = isSelected
+    ? COLORS.selected.border
+    : isRoot
+      ? COLORS.root.border
+      : (isHighlighted ? COLORS.selected.border : colorScheme.border);
   
-  const glowColor = isRoot 
-    ? COLORS.root.glow 
-    : isSelected 
-      ? COLORS.selected.glow 
-      : colorScheme.glow;
+  const cardBg = isSelected
+    ? COLORS.selected.bg
+    : isRoot
+      ? COLORS.root.bg
+      : '#FFFFFF';
   
-  // Display info
-  const displayName = person 
+  const displayName = person
     ? `${person.firstName}${person.lastName ? ` ${person.lastName.charAt(0)}.` : ''}`
     : 'Unknown';
   
@@ -180,61 +153,42 @@ export const AnimatedMemberNode = memo(function AnimatedMemberNode({
   
   let lifeSpan = '';
   if (birthYear) {
-    if (deathYear) {
-      lifeSpan = `${birthYear} - ${deathYear}`;
-    } else {
-      lifeSpan = `b. ${birthYear}`;
-    }
+    lifeSpan = deathYear ? `${birthYear} – ${deathYear}` : `b. ${birthYear}`;
   }
   
   return (
     <GestureDetector gesture={composed}>
       <Animated.View style={[styles.wrapper, containerStyle]}>
-        {/* Highlight Ring (static, no animation) */}
+        {/* Selection ring */}
         {(isSelected || isHighlighted) && (
-          <View 
-            style={[
-              styles.highlightRing, 
-              { borderColor: glowColor }
-            ]} 
-          />
+          <View style={[styles.selectionRing, { borderColor }]} />
         )}
         
         {/* Main Card */}
-        <View style={[styles.card, { borderColor }]}>
-          {/* Root Badge */}
+        <View style={[styles.card, { borderColor, backgroundColor: cardBg }]}>
+          {/* Root badge */}
           {isRoot && (
             <View style={styles.rootBadge}>
-              <Text style={styles.rootBadgeText}>ME</Text>
-            </View>
-          )}
-          
-          {/* Deceased Indicator */}
-          {!isAlive && (
-            <View style={styles.deceasedBadge}>
-              <Text style={styles.deceasedEmoji}>🕯️</Text>
+              <Text style={styles.rootBadgeText}>YOU</Text>
             </View>
           )}
           
           {/* Avatar */}
-          <View style={[styles.avatarContainer, { borderColor }]}>
+          <View style={[styles.avatarContainer, { borderColor: colorScheme.border }]}>
             {person?.photoUri ? (
-              <Image 
-                source={{ uri: person.photoUri }} 
-                style={[styles.avatarImage, !isAlive && styles.avatarDeceased]} 
+              <Image
+                source={{ uri: person.photoUri }}
+                style={[styles.avatarImage, !isAlive && styles.avatarDeceased]}
+                fadeDuration={0}
               />
             ) : (
-              <LinearGradient
-                colors={colorScheme.gradient}
-                style={styles.avatarGradient}
-              >
+              <LinearGradient colors={colorScheme.gradient} style={styles.avatarGradient}>
                 <Text style={styles.initialsText}>
                   {getInitials(person?.firstName, person?.lastName)}
                 </Text>
               </LinearGradient>
             )}
             
-            {/* Deceased cross overlay */}
             {!isAlive && (
               <View style={styles.deceasedOverlay}>
                 <Text style={styles.crossText}>†</Text>
@@ -243,10 +197,7 @@ export const AnimatedMemberNode = memo(function AnimatedMemberNode({
           </View>
           
           {/* Name */}
-          <Text 
-            style={[styles.name, !isAlive && styles.deceasedText]} 
-            numberOfLines={2}
-          >
+          <Text style={[styles.name, !isAlive && styles.deceasedText]} numberOfLines={2}>
             {displayName}
           </Text>
           
@@ -267,10 +218,6 @@ export const AnimatedMemberNode = memo(function AnimatedMemberNode({
   );
 });
 
-// ═══════════════════════════════════════════════════════════
-// STYLES
-// ═══════════════════════════════════════════════════════════
-
 const styles = StyleSheet.create({
   wrapper: {
     width: NODE_WIDTH,
@@ -278,93 +225,59 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  
-  highlightRing: {
+  selectionRing: {
     position: 'absolute',
-    width: NODE_WIDTH + 12,
-    height: NODE_HEIGHT + 12,
-    borderRadius: 22,
-    borderWidth: 3,
-    borderColor: 'transparent',
+    width: NODE_WIDTH + 10,
+    height: NODE_HEIGHT + 10,
+    borderRadius: 20,
+    borderWidth: 2.5,
   },
-  
   card: {
     width: NODE_WIDTH,
     height: NODE_HEIGHT,
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    borderWidth: 3,
+    borderWidth: 2,
     padding: 8,
     alignItems: 'center',
     justifyContent: 'flex-start',
-    
-    // Shadow
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  
-  // Root Badge
-  rootBadge: {
-    position: 'absolute',
-    top: -10,
-    left: '50%',
-    marginLeft: -18,
-    backgroundColor: '#D97706',
-    paddingHorizontal: 12,
-    paddingVertical: 3,
-    borderRadius: 12,
-    zIndex: 10,
-    
-    // Shadow
-    shadowColor: '#D97706',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.4,
-    shadowRadius: 4,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
     elevation: 4,
   },
-  rootBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-    color: '#FFF',
-    letterSpacing: 1.5,
-  },
-  
-  // Deceased Badge
-  deceasedBadge: {
+  rootBadge: {
     position: 'absolute',
-    top: -8,
-    right: -8,
+    top: -9,
+    left: '50%',
+    marginLeft: -16,
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 10,
+    paddingVertical: 2,
+    borderRadius: 10,
     zIndex: 10,
   },
-  deceasedEmoji: {
-    fontSize: 16,
+  rootBadgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#FFF',
+    letterSpacing: 1,
   },
-  
-  // Avatar
   avatarContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 54,
+    height: 54,
+    borderRadius: 27,
     borderWidth: 2,
     overflow: 'hidden',
     marginBottom: 6,
-    
-    // Shadow
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
   },
   avatarImage: {
     width: '100%',
     height: '100%',
   },
   avatarDeceased: {
-    opacity: 0.7,
+    opacity: 0.6,
   },
   avatarGradient: {
     width: '100%',
@@ -373,62 +286,56 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   initialsText: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     color: '#FFFFFF',
-    textShadowColor: 'rgba(0,0,0,0.3)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
   },
-  
   deceasedOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+    backgroundColor: 'rgba(0,0,0,0.25)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   crossText: {
-    fontSize: 28,
+    fontSize: 24,
     color: '#FFFFFF',
     fontWeight: '300',
   },
-  
-  // Name
   name: {
     fontSize: 12,
     fontWeight: '600',
     color: '#1F2937',
     textAlign: 'center',
     marginBottom: 2,
+    lineHeight: 15,
   },
   deceasedText: {
-    color: '#6B7280',
+    color: '#9CA3AF',
   },
-  
-  // Life Span
   lifeSpan: {
     fontSize: 10,
-    color: '#6B7280',
+    color: '#9CA3AF',
     textAlign: 'center',
   },
-  
-  // Relation Badge
   relationBadge: {
     position: 'absolute',
     bottom: 4,
     left: 4,
     right: 4,
-    backgroundColor: VanshColors.suvarna[100],
+    backgroundColor: VanshColors.suvarna[50],
     paddingVertical: 2,
     paddingHorizontal: 6,
     borderRadius: 8,
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: VanshColors.suvarna[200],
   },
   relationText: {
-    fontSize: 9,
-    fontWeight: '600',
+    fontSize: 8,
+    fontWeight: '700',
     color: VanshColors.suvarna[700],
     textTransform: 'uppercase',
+    letterSpacing: 0.3,
   },
 });
 

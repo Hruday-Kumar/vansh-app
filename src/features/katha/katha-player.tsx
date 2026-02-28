@@ -209,18 +209,18 @@ export function KathaPlayer({ katha, onClose }: KathaPlayerProps) {
       )}
       
       {/* Transcript */}
-      {katha.transcript && (
+      {katha.transcript ? (
         <View style={styles.transcriptContainer}>
           <SacredText variant="quote" color="secondary" align="center" numberOfLines={3}>
             "{katha.transcript.slice(0, 150)}..."
           </SacredText>
         </View>
-      )}
+      ) : null}
       
       {/* Waveform & Controls */}
       <View style={[styles.controls, { paddingBottom: insets.bottom + VanshSpacing.lg }]}>
         <VoiceWaveform
-          waveform={katha.waveform}
+          waveform={katha.waveform || []}
           duration={katha.duration}
           currentPosition={position}
           isPlaying={isPlaying}

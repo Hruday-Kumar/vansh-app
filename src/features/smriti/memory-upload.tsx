@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { HeritageCard, MemberAvatar, SacredText, SilkButton } from '../../components';
+import { API_URL } from '../../config/api';
 import { useAuthStore, useFamilyStore, useMemoryStore } from '../../state';
 import { VanshColors, VanshInsets, VanshRadius, VanshSpacing } from '../../theme';
 import type { MemberId } from '../../types';
@@ -91,7 +92,6 @@ export function MemoryUpload({ onComplete, onCancel }: MemoryUploadProps) {
     try {
       // Get auth token
       const token = useAuthStore.getState().token;
-      const { API_URL } = await import('../../config/api');
       
       // Create FormData for upload
       const formData = new FormData();
@@ -274,7 +274,7 @@ export function MemoryUpload({ onComplete, onCancel }: MemoryUploadProps) {
       </ScrollView>
       
       {/* Upload Button */}
-      <View style={[styles.footer, { paddingBottom: insets.bottom + VanshSpacing.md }]}>
+      <View style={[styles.footer, { paddingBottom: insets.bottom + 100 }]}>
         <SilkButton
           variant="primary"
           size="lg"

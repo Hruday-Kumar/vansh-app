@@ -5,14 +5,13 @@
 import { Image } from 'expo-image';
 import React, { useCallback, useMemo } from 'react';
 import {
-    Dimensions,
-    FlatList,
-    Pressable,
-    RefreshControl,
-    StyleSheet,
-    View,
+  Dimensions,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  StyleSheet,
+  View,
 } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
 import { SacredText } from '../../components';
 import { useMemoryStore, useUIStore } from '../../state';
 import { VanshColors, VanshRadius, VanshSpacing } from '../../theme';
@@ -97,6 +96,15 @@ export function MemoryGallery({
       columnWrapperStyle={styles.row}
       showsVerticalScrollIndicator={false}
       ListHeaderComponent={ListHeaderComponent}
+      removeClippedSubviews={true}
+      windowSize={5}
+      maxToRenderPerBatch={9}
+      initialNumToRender={12}
+      getItemLayout={(_data, index) => ({
+        length: ITEM_SIZE + ITEM_GAP,
+        offset: (ITEM_SIZE + ITEM_GAP) * Math.floor(index / NUM_COLUMNS),
+        index,
+      })}
       refreshControl={
         onRefresh ? (
           <RefreshControl
@@ -122,24 +130,23 @@ interface MemoryThumbnailProps {
 }
 
 function MemoryThumbnail({ memory, onPress, index }: MemoryThumbnailProps) {
-  const delay = Math.min(index * 50, 500);
-  
   return (
-    <Animated.View entering={FadeIn.delay(delay).duration(300)}>
-      <Pressable
-        onPress={onPress}
-        style={({ pressed }) => [
-          styles.thumbnail,
-          pressed && styles.thumbnailPressed,
-        ]}
-      >
-        <Image
-          source={{ uri: memory.thumbnailUri || memory.uri }}
-          style={styles.thumbnailImage}
-          contentFit="cover"
-          placeholder={memory.blurhash}
-          transition={200}
-        />
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.thumbnail,
+        pressed && styles.thumbnailPressed,
+      ]}
+    >
+      <Image
+        source={{ uri: memory.thumbnailUri || memory.uri }}
+        style={styles.thumbnailImage}
+        contentFit="cover"
+        placeholder={memory.blurhash}
+        transition={150}
+        recyclingKey={`thumb-${memory.id}`}
+        cachePolicy="memory-disk"
+      />
         
         {/* Type indicator */}
         {memory.type === 'video' && (
@@ -164,13 +171,13 @@ function MemoryThumbnail({ memory, onPress, index }: MemoryThumbnailProps) {
           </View>
         )}
       </Pressable>
-    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   gridContainer: {
     padding: VanshSpacing.lg,
+    paddingBottom: 120,
   },
   row: {
     gap: ITEM_GAP,

@@ -16,6 +16,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { FamilyId, Gender, MemberId, Relationship, VrikshaMember } from '../../types';
+import {
+    disconnectSync,
+    getSyncInfo,
+    initTreeSync,
+    joinSyncedTree,
+    publishTree,
+    pushTreeChanges,
+    type SyncedTreeData
+} from './tree-sync-service';
 
 // ═══════════════════════════════════════════════════════════
 // TYPES
@@ -62,28 +71,28 @@ export interface VrikshaState {
   members: Map<string, FamilyMember>;
   relations: StoredRelation[];
   rootMemberId: string | null;
-  
+
   // Computed (not persisted)
   membersList: FamilyMember[];
   membersWithRelationships: VrikshaMember[];
-  
+
   // UI State
   selectedMemberId: string | null;
   highlightedPath: string[];
   isLoading: boolean;
-  
+
   // ═══════════ MEMBER CRUD ═══════════
   addMember: (member: Omit<FamilyMember, 'id' | 'createdAt' | 'updatedAt' | 'memoryCount' | 'kathaCount' | 'hasVoiceSamples'>) => string;
   updateMember: (id: string, updates: Partial<FamilyMember>) => void;
   deleteMember: (id: string) => void;
   getMember: (id: string) => FamilyMember | undefined;
-  
+
   // ═══════════ RELATIONSHIP CRUD ═══════════
   addRelation: (fromId: string, toId: string, type: BasicRelationType, subtype?: string) => void;
   removeRelation: (fromId: string, toId: string) => void;
   getDirectRelatives: (id: string, type?: BasicRelationType) => FamilyMember[];
   getMemberRelationships: (id: string) => Array<{ memberId: string; type: BasicRelationType; subtype?: string }>;
-  
+
   // ═══════════ COMPUTED RELATIONSHIPS ═══════════
   getParents: (id: string) => FamilyMember[];
   getChildren: (id: string) => FamilyMember[];
@@ -93,20 +102,31 @@ export interface VrikshaState {
   getGrandchildren: (id: string) => FamilyMember[];
   getUnclesAunts: (id: string) => FamilyMember[];
   getCousins: (id: string) => FamilyMember[];
-  
+
   // ═══════════ RELATIONSHIP DETERMINATION ═══════════
   findRelationship: (fromId: string, toId: string) => { path: string[]; label: string } | null;
-  
+
   // ═══════════ UI ACTIONS ═══════════
   setSelectedMember: (id: string | null) => void;
   setHighlightedPath: (path: string[]) => void;
   setRootMember: (id: string) => void;
-  
+
   // ═══════════ DATA MANAGEMENT ═══════════
   clearAll: () => void;
-  importData: (members: FamilyMember[], relations: StoredRelation[]) => void;
+  importData: (members: FamilyMember[], relations: StoredRelation[], newRootId?: string) => void;
   exportData: () => { members: FamilyMember[]; relations: StoredRelation[] };
-  
+
+  // ═══════════ SYNC ═══════════
+  isSynced: boolean;
+  syncTreeId: string | null;
+  syncVersion: number;
+  isSyncPushing: boolean;
+  enableSync: (treeName: string, myIdentityId: string | null) => Promise<string | null>;
+  joinSync: (treeId: string, myIdentityId: string | null) => Promise<boolean>;
+  disableSync: () => Promise<void>;
+  _applyRemoteUpdate: (data: SyncedTreeData) => void;
+  _pushToSync: () => void;
+
   // ═══════════ INTERNAL ═══════════
   _recomputeMembersList: () => void;
 }
@@ -134,12 +154,12 @@ function getBasicType(subtype: string): BasicRelationType {
   const CHILD_TYPES = ['son', 'daughter', 'step_son', 'step_daughter', 'grandson', 'granddaughter', 'adopted_son', 'adopted_daughter'];
   const SPOUSE_TYPES = ['husband', 'wife'];
   const SIBLING_TYPES = ['brother', 'sister', 'half_brother', 'half_sister'];
-  
+
   if (PARENT_TYPES.includes(subtype)) return 'parent';
   if (CHILD_TYPES.includes(subtype)) return 'child';
   if (SPOUSE_TYPES.includes(subtype)) return 'spouse';
   if (SIBLING_TYPES.includes(subtype)) return 'sibling';
-  
+
   return subtype as BasicRelationType;
 }
 
@@ -539,13 +559,19 @@ export const useVrikshaStore = create<VrikshaState>()(
       selectedMemberId: null,
       highlightedPath: [],
       isLoading: false,
-      
+
+      // Sync state
+      isSynced: false,
+      syncTreeId: null,
+      syncVersion: 0,
+      isSyncPushing: false,
+
       // ═══════════ MEMBER CRUD ═══════════
-      
+
       addMember: (memberData) => {
         const id = generateId();
         const now = new Date().toISOString();
-        
+
         const member: FamilyMember = {
           ...memberData,
           id,
@@ -555,86 +581,86 @@ export const useVrikshaStore = create<VrikshaState>()(
           createdAt: now,
           updatedAt: now,
         };
-        
+
         set((state) => {
           const newMembers = new Map(state.members);
           newMembers.set(id, member);
-          
+
           // Set as root if first member
           const newRoot = state.rootMemberId || id;
-          
-          return { 
-            members: newMembers, 
+
+          return {
+            members: newMembers,
             rootMemberId: newRoot,
           };
         });
-        
+
         get()._recomputeMembersList();
         return id;
       },
-      
+
       updateMember: (id, updates) => {
         set((state) => {
           const existing = state.members.get(id);
           if (!existing) return state;
-          
+
           const updated = {
             ...existing,
             ...updates,
             updatedAt: new Date().toISOString(),
           };
-          
+
           const newMembers = new Map(state.members);
           newMembers.set(id, updated);
-          
+
           return { members: newMembers };
         });
-        
+
         get()._recomputeMembersList();
       },
-      
+
       deleteMember: (id) => {
         set((state) => {
           const newMembers = new Map(state.members);
           newMembers.delete(id);
-          
+
           // Remove all relations involving this member
           const newRelations = state.relations.filter(
             r => r.fromMemberId !== id && r.toMemberId !== id
           );
-          
+
           // Update root if needed
-          const newRoot = state.rootMemberId === id 
+          const newRoot = state.rootMemberId === id
             ? (newMembers.keys().next().value || null)
             : state.rootMemberId;
-          
-          return { 
-            members: newMembers, 
+
+          return {
+            members: newMembers,
             relations: newRelations,
             rootMemberId: newRoot,
           };
         });
-        
+
         get()._recomputeMembersList();
       },
-      
+
       getMember: (id) => get().members.get(id),
-      
+
       // ═══════════ RELATIONSHIP CRUD ═══════════
-      
+
       addRelation: (fromId, toId, type, subtype) => {
         if (fromId === toId) return;
-        
+
         const id = generateId();
         const reverseId = generateId();
-        
+
         set((state) => {
           // Check if this exact relation already exists
           const exists = state.relations.some(
             r => (r.fromMemberId === fromId && r.toMemberId === toId && r.type === type)
           );
           if (exists) return state;
-          
+
           // Create bidirectional relations
           const newRelation: StoredRelation = {
             id,
@@ -644,7 +670,7 @@ export const useVrikshaStore = create<VrikshaState>()(
             subtype,
             createdAt: new Date().toISOString(),
           };
-          
+
           const reverseRelation: StoredRelation = {
             id: reverseId,
             fromMemberId: toId,
@@ -653,12 +679,12 @@ export const useVrikshaStore = create<VrikshaState>()(
             subtype,
             createdAt: new Date().toISOString(),
           };
-          
+
           const newRelations = [...state.relations, newRelation, reverseRelation];
-          
+
           // ═══════════ AUTO-INFERENCE ═══════════
           const inferred: StoredRelation[] = [];
-          
+
           // If adding SPOUSE relationship:
           // - If spouse has children, auto-add parent/child with the new spouse
           if (type === 'spouse') {
@@ -666,7 +692,7 @@ export const useVrikshaStore = create<VrikshaState>()(
             const spouseChildren = state.relations
               .filter(r => r.fromMemberId === toId && r.type === 'child')
               .map(r => r.toMemberId);
-            
+
             // For each child of the spouse, add parent/child with fromId if not exists
             for (const childId of spouseChildren) {
               const alreadyLinked = [...newRelations, ...inferred].some(
@@ -689,12 +715,12 @@ export const useVrikshaStore = create<VrikshaState>()(
                 });
               }
             }
-            
+
             // Same for children of fromId
             const myChildren = state.relations
               .filter(r => r.fromMemberId === fromId && r.type === 'child')
               .map(r => r.toMemberId);
-            
+
             for (const childId of myChildren) {
               const alreadyLinked = [...newRelations, ...inferred].some(
                 r => r.fromMemberId === toId && r.toMemberId === childId && r.type === 'child'
@@ -717,7 +743,7 @@ export const useVrikshaStore = create<VrikshaState>()(
               }
             }
           }
-          
+
           // If adding PARENT/CHILD relationship:
           // - Auto-infer sibling relationships between children of same parent
           // - Auto-infer spouse between co-parents
@@ -727,7 +753,7 @@ export const useVrikshaStore = create<VrikshaState>()(
             const otherChildren = state.relations
               .filter(r => r.fromMemberId === fromId && r.type === 'child' && r.toMemberId !== toId)
               .map(r => r.toMemberId);
-            
+
             for (const siblingId of otherChildren) {
               const alreadySiblings = [...newRelations, ...inferred].some(
                 r => r.fromMemberId === toId && r.toMemberId === siblingId && r.type === 'sibling'
@@ -749,12 +775,12 @@ export const useVrikshaStore = create<VrikshaState>()(
                 });
               }
             }
-            
+
             // Also add the spouse of fromId as parent of toId
             const spouses = state.relations
               .filter(r => r.fromMemberId === fromId && r.type === 'spouse')
               .map(r => r.toMemberId);
-            
+
             for (const spouseId of spouses) {
               const alreadyParent = [...newRelations, ...inferred].some(
                 r => r.fromMemberId === spouseId && r.toMemberId === toId && r.type === 'child'
@@ -776,13 +802,13 @@ export const useVrikshaStore = create<VrikshaState>()(
                 });
               }
             }
-            
+
             // AUTO-SPOUSE: if the child (toId) already has other parents,
             // link them as spouses of the new parent (fromId)
             const existingParentsOfChild = state.relations
               .filter(r => r.fromMemberId === toId && r.type === 'parent' && r.toMemberId !== fromId)
               .map(r => r.toMemberId);
-            
+
             for (const existingParentId of existingParentsOfChild) {
               const alreadySpouse = [...newRelations, ...inferred].some(
                 r => r.fromMemberId === fromId && r.toMemberId === existingParentId && r.type === 'spouse'
@@ -805,14 +831,14 @@ export const useVrikshaStore = create<VrikshaState>()(
               }
             }
           }
-          
+
           if (type === 'parent') {
             // fromId just got a new parent (toId).
             // Find all other children of toId
             const otherChildren = state.relations
               .filter(r => r.fromMemberId === toId && r.type === 'child' && r.toMemberId !== fromId)
               .map(r => r.toMemberId);
-            
+
             for (const siblingId of otherChildren) {
               const alreadySiblings = [...newRelations, ...inferred].some(
                 r => r.fromMemberId === fromId && r.toMemberId === siblingId && r.type === 'sibling'
@@ -834,12 +860,12 @@ export const useVrikshaStore = create<VrikshaState>()(
                 });
               }
             }
-            
+
             // Also add the spouse of toId as parent of fromId
             const spouses = state.relations
               .filter(r => r.fromMemberId === toId && r.type === 'spouse')
               .map(r => r.toMemberId);
-            
+
             for (const spouseId of spouses) {
               const alreadyParent = [...newRelations, ...inferred].some(
                 r => r.fromMemberId === fromId && r.toMemberId === spouseId && r.type === 'parent'
@@ -861,13 +887,13 @@ export const useVrikshaStore = create<VrikshaState>()(
                 });
               }
             }
-            
+
             // AUTO-SPOUSE: if fromId already has other parents,
             // link them as spouses of the new parent (toId)
             const existingParentsOfFrom = state.relations
               .filter(r => r.fromMemberId === fromId && r.type === 'parent' && r.toMemberId !== toId)
               .map(r => r.toMemberId);
-            
+
             for (const existingParentId of existingParentsOfFrom) {
               const alreadySpouse = [...newRelations, ...inferred].some(
                 r => r.fromMemberId === toId && r.toMemberId === existingParentId && r.type === 'spouse'
@@ -890,37 +916,37 @@ export const useVrikshaStore = create<VrikshaState>()(
               }
             }
           }
-          
+
           return {
             relations: [...newRelations, ...inferred],
           };
         });
-        
+
         get()._recomputeMembersList();
       },
-      
+
       removeRelation: (fromId, toId) => {
         set((state) => ({
           relations: state.relations.filter(
             r => !((r.fromMemberId === fromId && r.toMemberId === toId) ||
-                   (r.fromMemberId === toId && r.toMemberId === fromId))
+              (r.fromMemberId === toId && r.toMemberId === fromId))
           ),
         }));
-        
+
         get()._recomputeMembersList();
       },
-      
+
       getDirectRelatives: (id, type) => {
         const state = get();
         const relations = state.relations.filter(
           r => r.fromMemberId === id && (!type || r.type === type)
         );
-        
+
         return relations
           .map(r => state.members.get(r.toMemberId))
           .filter(Boolean) as FamilyMember[];
       },
-      
+
       getMemberRelationships: (id) => {
         const state = get();
         return state.relations
@@ -931,114 +957,114 @@ export const useVrikshaStore = create<VrikshaState>()(
             subtype: r.subtype,
           }));
       },
-      
+
       // ═══════════ COMPUTED RELATIONSHIPS ═══════════
-      
+
       getParents: (id) => get().getDirectRelatives(id, 'parent'),
       getChildren: (id) => get().getDirectRelatives(id, 'child'),
       getSpouses: (id) => get().getDirectRelatives(id, 'spouse'),
-      
+
       getSiblings: (id) => {
         const state = get();
         const parents = state.getParents(id);
         const siblingSet = new Set<string>();
-        
+
         for (const parent of parents) {
           const children = state.getChildren(parent.id);
           for (const child of children) {
             if (child.id !== id) siblingSet.add(child.id);
           }
         }
-        
+
         // Also include directly linked siblings
         const directSiblings = state.getDirectRelatives(id, 'sibling');
         for (const sib of directSiblings) {
           siblingSet.add(sib.id);
         }
-        
+
         return Array.from(siblingSet)
           .map(sId => state.members.get(sId))
           .filter(Boolean) as FamilyMember[];
       },
-      
+
       getGrandparents: (id) => {
         const state = get();
         const parents = state.getParents(id);
         const grandparents: FamilyMember[] = [];
-        
+
         for (const parent of parents) {
           grandparents.push(...state.getParents(parent.id));
         }
-        
+
         return grandparents;
       },
-      
+
       getGrandchildren: (id) => {
         const state = get();
         const children = state.getChildren(id);
         const grandchildren: FamilyMember[] = [];
-        
+
         for (const child of children) {
           grandchildren.push(...state.getChildren(child.id));
         }
-        
+
         return grandchildren;
       },
-      
+
       getUnclesAunts: (id) => {
         const state = get();
         const parents = state.getParents(id);
         const unclesAunts: FamilyMember[] = [];
-        
+
         for (const parent of parents) {
           const parentSiblings = state.getSiblings(parent.id);
           unclesAunts.push(...parentSiblings);
-          
+
           // Include their spouses
           for (const sibling of parentSiblings) {
             unclesAunts.push(...state.getSpouses(sibling.id));
           }
         }
-        
+
         return unclesAunts;
       },
-      
+
       getCousins: (id) => {
         const state = get();
         const unclesAunts = state.getUnclesAunts(id);
         const cousins: FamilyMember[] = [];
-        
+
         for (const ua of unclesAunts) {
           cousins.push(...state.getChildren(ua.id));
         }
-        
+
         return cousins;
       },
-      
+
       // ═══════════ RELATIONSHIP DETERMINATION ═══════════
-      
+
       findRelationship: (fromId, toId) => {
         if (fromId === toId) return { path: [fromId], label: 'Self' };
-        
+
         const state = get();
         const fromMember = state.members.get(fromId);
         const toMember = state.members.get(toId);
-        
+
         if (!fromMember || !toMember) return null;
-        
+
         // Use BFS-based relationship finder that traverses ALL links
         // including spouse links, which enables in-law relationship detection
         return findRelationshipBFS(fromId, toId, state.relations, state.members);
       },
-      
+
       // ═══════════ UI ACTIONS ═══════════
-      
+
       setSelectedMember: (id) => set({ selectedMemberId: id }),
       setHighlightedPath: (path) => set({ highlightedPath: path }),
       setRootMember: (id) => set({ rootMemberId: id }),
-      
+
       // ═══════════ DATA MANAGEMENT ═══════════
-      
+
       clearAll: () => {
         set({
           members: new Map(),
@@ -1050,20 +1076,25 @@ export const useVrikshaStore = create<VrikshaState>()(
           highlightedPath: [],
         });
       },
-      
-      importData: (members, relations) => {
+
+      importData: (members, relations, newRootId) => {
         const membersMap = new Map<string, FamilyMember>();
         members.forEach(m => membersMap.set(m.id, m));
-        
+
+        // Use claimed identity as root, fall back to first member
+        const rootId = (newRootId && membersMap.has(newRootId))
+          ? newRootId
+          : members[0]?.id || null;
+
         set({
           members: membersMap,
           relations,
-          rootMemberId: members[0]?.id || null,
+          rootMemberId: rootId,
         });
-        
+
         get()._recomputeMembersList();
       },
-      
+
       exportData: () => {
         const state = get();
         return {
@@ -1071,13 +1102,122 @@ export const useVrikshaStore = create<VrikshaState>()(
           relations: state.relations,
         };
       },
-      
+
+      // ═══════════ SYNC ═══════════
+
+      enableSync: async (treeName, myIdentityId) => {
+        const state = get();
+        const members = Array.from(state.members.values());
+        const treeId = await publishTree(members, state.relations, treeName, myIdentityId);
+
+        if (treeId) {
+          set({ isSynced: true, syncTreeId: treeId, syncVersion: 1 });
+
+          // Subscribe to remote updates
+          initTreeSync((data) => get()._applyRemoteUpdate(data));
+        }
+
+        return treeId;
+      },
+
+      joinSync: async (treeId, myIdentityId) => {
+        const data = await joinSyncedTree(treeId, myIdentityId, (remoteData) => {
+          get()._applyRemoteUpdate(remoteData);
+        });
+
+        if (data) {
+          // Import the tree data
+          const membersMap = new Map<string, FamilyMember>();
+          (data.members || []).forEach(m => membersMap.set(m.id, m));
+
+          set({
+            members: membersMap,
+            relations: data.relations || [],
+            rootMemberId: myIdentityId || data.members?.[0]?.id || null,
+            isSynced: true,
+            syncTreeId: treeId,
+            syncVersion: data.metadata.version,
+          });
+
+          get()._recomputeMembersList();
+          return true;
+        }
+
+        return false;
+      },
+
+      disableSync: async () => {
+        await disconnectSync();
+        set({ isSynced: false, syncTreeId: null, syncVersion: 0 });
+      },
+
+      _applyRemoteUpdate: (data) => {
+        if (!data.members || !data.relations) return;
+
+        const currentVersion = get().syncVersion;
+        if (data.metadata.version <= currentVersion) return;
+
+        console.log(`[VrikshaStore] Applying remote update v${data.metadata.version}`);
+
+        // Normalize: Firebase may return objects instead of arrays
+        const membersArr: FamilyMember[] = Array.isArray(data.members)
+          ? data.members
+          : Object.values(data.members as any);
+        const relationsArr: StoredRelation[] = Array.isArray(data.relations)
+          ? data.relations
+          : Object.values(data.relations as any);
+
+        const membersMap = new Map<string, FamilyMember>();
+        membersArr.forEach(m => membersMap.set(m.id, m));
+
+        // Preserve current rootMemberId (each device has its own perspective)
+        const currentRoot = get().rootMemberId;
+        const rootId = (currentRoot && membersMap.has(currentRoot))
+          ? currentRoot
+          : membersArr[0]?.id || null;
+
+        isApplyingRemoteUpdate = true;
+        set({
+          members: membersMap,
+          relations: relationsArr,
+          rootMemberId: rootId,
+          syncVersion: data.metadata.version,
+        });
+        isApplyingRemoteUpdate = false;
+
+        get()._recomputeMembersList();
+      },
+
+      _pushToSync: () => {
+        const state = get();
+        if (!state.isSynced || state.isSyncPushing) return;
+
+        set({ isSyncPushing: true });
+
+        const members = Array.from(state.members.values());
+        pushTreeChanges(members, state.relations)
+          .then((success) => {
+            if (success) {
+              const info = getSyncInfo();
+              set({
+                isSyncPushing: false,
+                syncVersion: info?.localVersion || state.syncVersion + 1,
+              });
+            } else {
+              set({ isSyncPushing: false });
+            }
+          })
+          .catch(() => {
+            set({ isSyncPushing: false });
+          });
+      },
+
       // ═══════════ INTERNAL ═══════════
-      
+
       _recomputeMembersList: () => {
         const state = get();
         const membersList = Array.from(state.members.values());
-        
+
         // Build membersWithRelationships for compatibility with existing components
         const membersWithRelationships: VrikshaMember[] = membersList.map(m => {
           const relationships: Relationship[] = state.relations
@@ -1093,7 +1233,7 @@ export const useVrikshaStore = create<VrikshaState>()(
                 glowColor: '#FFD700',
               },
             }));
-          
+
           return {
             id: m.id as MemberId,
             familyId: m.familyId as FamilyId,
@@ -1116,7 +1256,7 @@ export const useVrikshaStore = create<VrikshaState>()(
             relationships,
           };
         });
-        
+
         set({ membersList, membersWithRelationships });
       },
     }),
@@ -1142,13 +1282,59 @@ export const useVrikshaStore = create<VrikshaState>()(
 );
 
 // ═══════════════════════════════════════════════════════════
+// AUTO-SYNC: Push changes to Firebase on store mutations
+// ═══════════════════════════════════════════════════════════
+
+let pushDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let isApplyingRemoteUpdate = false; // prevents echo-pushing back remote changes
+
+useVrikshaStore.subscribe((state, prevState) => {
+  // Only push if synced, data actually changed, and NOT a remote-update echo
+  if (!state.isSynced || isApplyingRemoteUpdate) return;
+
+  const membersChanged = state.members !== prevState.members;
+  const relationsChanged = state.relations !== prevState.relations;
+
+  if (membersChanged || relationsChanged) {
+    // Debounce: wait 1.5s after last change before pushing
+    if (pushDebounceTimer) clearTimeout(pushDebounceTimer);
+    pushDebounceTimer = setTimeout(() => {
+      state._pushToSync();
+    }, 1500);
+  }
+});
+
+// On app start, re-initialize sync subscription if we have a synced tree
+setTimeout(async () => {
+  try {
+    // loadLocalSyncInfo is async — getSyncInfo() only returns in-memory cache
+    // so we read from AsyncStorage directly via initTreeSync
+    await initTreeSync((data) => {
+      useVrikshaStore.getState()._applyRemoteUpdate(data);
+    });
+    // After init, getSyncInfo() is populated from AsyncStorage
+    const syncInfo = getSyncInfo();
+    if (syncInfo) {
+      useVrikshaStore.setState({
+        isSynced: true,
+        syncTreeId: syncInfo.treeId,
+        syncVersion: syncInfo.localVersion,
+      });
+      console.log('[VrikshaStore] Restored sync for tree:', syncInfo.treeId);
+    }
+  } catch (e) {
+    console.warn('[VrikshaStore] Failed to restore sync:', e);
+  }
+}, 2000);
+
+// ═══════════════════════════════════════════════════════════
 // DEMO DATA GENERATOR
 // ═══════════════════════════════════════════════════════════
 
 export function generateDemoFamily(): { members: FamilyMember[]; relations: StoredRelation[] } {
   const now = new Date().toISOString();
   const familyId = 'demo-family';
-  
+
   const members: FamilyMember[] = [
     {
       id: 'grandpa',
@@ -1290,12 +1476,12 @@ export function generateDemoFamily(): { members: FamilyMember[]; relations: Stor
       updatedAt: now,
     },
   ];
-  
+
   const relations: StoredRelation[] = [
     // Grandpa & Grandma are spouses
     { id: 'r1', fromMemberId: 'grandpa', toMemberId: 'grandma', type: 'spouse', createdAt: now },
     { id: 'r2', fromMemberId: 'grandma', toMemberId: 'grandpa', type: 'spouse', createdAt: now },
-    
+
     // Grandpa & Grandma are parents of Dad & Uncle
     { id: 'r3', fromMemberId: 'dad', toMemberId: 'grandpa', type: 'parent', subtype: 'father', createdAt: now },
     { id: 'r4', fromMemberId: 'grandpa', toMemberId: 'dad', type: 'child', createdAt: now },
@@ -1305,15 +1491,15 @@ export function generateDemoFamily(): { members: FamilyMember[]; relations: Stor
     { id: 'r8', fromMemberId: 'grandpa', toMemberId: 'uncle', type: 'child', createdAt: now },
     { id: 'r9', fromMemberId: 'uncle', toMemberId: 'grandma', type: 'parent', subtype: 'mother', createdAt: now },
     { id: 'r10', fromMemberId: 'grandma', toMemberId: 'uncle', type: 'child', createdAt: now },
-    
+
     // Dad & Uncle are siblings
     { id: 'r11', fromMemberId: 'dad', toMemberId: 'uncle', type: 'sibling', createdAt: now },
     { id: 'r12', fromMemberId: 'uncle', toMemberId: 'dad', type: 'sibling', createdAt: now },
-    
+
     // Dad & Mom are spouses
     { id: 'r13', fromMemberId: 'dad', toMemberId: 'mom', type: 'spouse', createdAt: now },
     { id: 'r14', fromMemberId: 'mom', toMemberId: 'dad', type: 'spouse', createdAt: now },
-    
+
     // Dad & Mom are parents of Me & Sister
     { id: 'r15', fromMemberId: 'me', toMemberId: 'dad', type: 'parent', subtype: 'father', createdAt: now },
     { id: 'r16', fromMemberId: 'dad', toMemberId: 'me', type: 'child', createdAt: now },
@@ -1323,15 +1509,15 @@ export function generateDemoFamily(): { members: FamilyMember[]; relations: Stor
     { id: 'r20', fromMemberId: 'dad', toMemberId: 'sister', type: 'child', createdAt: now },
     { id: 'r21', fromMemberId: 'sister', toMemberId: 'mom', type: 'parent', subtype: 'mother', createdAt: now },
     { id: 'r22', fromMemberId: 'mom', toMemberId: 'sister', type: 'child', createdAt: now },
-    
+
     // Me & Sister are siblings
     { id: 'r23', fromMemberId: 'me', toMemberId: 'sister', type: 'sibling', createdAt: now },
     { id: 'r24', fromMemberId: 'sister', toMemberId: 'me', type: 'sibling', createdAt: now },
-    
+
     // Cousin is child of Uncle
     { id: 'r25', fromMemberId: 'cousin', toMemberId: 'uncle', type: 'parent', subtype: 'father', createdAt: now },
     { id: 'r26', fromMemberId: 'uncle', toMemberId: 'cousin', type: 'child', createdAt: now },
   ];
-  
+
   return { members, relations };
 }

@@ -32,6 +32,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { VanshColors, VanshRadius, VanshSpacing } from '../../theme';
 import { QuickAddMember } from './quick-add-member';
+import { ShareTreeModal } from './share-tree-modal';
 import { useVrikshaStore, type FamilyMember } from './vriksha-store';
 
 // ═══════════════════════════════════════════════════════════
@@ -68,6 +69,7 @@ export function MemberDetailSheet({
   const [isEditing, setIsEditing] = useState(false);
   const [editedMember, setEditedMember] = useState<FamilyMember>(member);
   const [showAddRelative, setShowAddRelative] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
 
   // Reset edited member when member changes
   React.useEffect(() => {
@@ -170,8 +172,14 @@ export function MemberDetailSheet({
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Please allow access to your photo library to add a photo.');
+        return;
+      }
+
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
@@ -520,6 +528,16 @@ export function MemberDetailSheet({
                     </Text>
                   </TouchableOpacity>
 
+                  <TouchableOpacity
+                    style={[styles.actionButton, styles.shareButton]}
+                    onPress={() => setShowShareModal(true)}
+                  >
+                    <MaterialIcons name="share" size={20} color="#FFF" />
+                    <Text style={[styles.actionButtonText, { color: '#FFF' }]}>
+                      Share Tree
+                    </Text>
+                  </TouchableOpacity>
+
                   {rootMemberId !== member.id && (
                     <TouchableOpacity
                       style={styles.actionButton}
@@ -560,6 +578,13 @@ export function MemberDetailSheet({
         baseMember={member}
         onClose={() => setShowAddRelative(false)}
         onSuccess={() => setShowAddRelative(false)}
+      />
+
+      {/* Share Tree Modal */}
+      <ShareTreeModal
+        visible={showShareModal}
+        member={member}
+        onClose={() => setShowShareModal(false)}
       />
     </Modal>
   );
@@ -831,6 +856,10 @@ const styles = StyleSheet.create({
   addRelativeButton: {
     backgroundColor: VanshColors.suvarna[500],
     borderColor: VanshColors.suvarna[600],
+  },
+  shareButton: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#2563EB',
   },
 
   // Edit Fields

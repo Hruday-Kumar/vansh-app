@@ -289,58 +289,78 @@ interface KathaState {
   seek: (position: number) => void;
 }
 
-export const useKathaStore = create<KathaState>()((set) => ({
-  kathas: new Map(),
-  recentKathas: [],
-  selectedKatha: null,
-  
-  isRecording: false,
-  recordingDuration: 0,
-  recordingWaveform: [],
-  
-  isPlaying: false,
-  playbackKathaId: null,
-  playbackPosition: 0,
-  
-  setKathas: (kathas) => {
-    const kathasMap = new Map<KathaId, Katha>();
-    kathas.forEach((k) => kathasMap.set(k.id, k));
-    set({ kathas: kathasMap, recentKathas: kathas.slice(0, 10) });
-  },
-  
-  addKatha: (katha) => set((state) => {
-    const newMap = new Map(state.kathas);
-    newMap.set(katha.id, katha);
-    return {
-      kathas: newMap,
-      recentKathas: [katha, ...state.recentKathas].slice(0, 10),
-    };
-  }),
-  
-  selectKatha: (katha) => set({ selectedKatha: katha }),
-  
-  startRecording: () => set({
-    isRecording: true,
-    recordingDuration: 0,
-    recordingWaveform: [],
-  }),
-  
-  stopRecording: () => set({ isRecording: false }),
-  
-  updateRecording: (duration, waveform) => set({
-    recordingDuration: duration,
-    recordingWaveform: waveform,
-  }),
-  
-  play: (kathaId) => set({
-    isPlaying: true,
-    playbackKathaId: kathaId,
-  }),
-  
-  pause: () => set({ isPlaying: false }),
-  
-  seek: (position) => set({ playbackPosition: position }),
-}));
+export const useKathaStore = create<KathaState>()(
+  persist(
+    (set) => ({
+      kathas: new Map(),
+      recentKathas: [],
+      selectedKatha: null,
+      
+      isRecording: false,
+      recordingDuration: 0,
+      recordingWaveform: [],
+      
+      isPlaying: false,
+      playbackKathaId: null,
+      playbackPosition: 0,
+      
+      setKathas: (kathas) => {
+        const kathasMap = new Map<KathaId, Katha>();
+        kathas.forEach((k) => kathasMap.set(k.id, k));
+        set({ kathas: kathasMap, recentKathas: kathas.slice(0, 10) });
+      },
+      
+      addKatha: (katha) => set((state) => {
+        const newMap = new Map(state.kathas);
+        newMap.set(katha.id, katha);
+        return {
+          kathas: newMap,
+          recentKathas: [katha, ...state.recentKathas].slice(0, 10),
+        };
+      }),
+      
+      selectKatha: (katha) => set({ selectedKatha: katha }),
+      
+      startRecording: () => set({
+        isRecording: true,
+        recordingDuration: 0,
+        recordingWaveform: [],
+      }),
+      
+      stopRecording: () => set({ isRecording: false }),
+      
+      updateRecording: (duration, waveform) => set({
+        recordingDuration: duration,
+        recordingWaveform: waveform,
+      }),
+      
+      play: (kathaId) => set({
+        isPlaying: true,
+        playbackKathaId: kathaId,
+      }),
+      
+      pause: () => set({ isPlaying: false }),
+      
+      seek: (position) => set({ playbackPosition: position }),
+    }),
+    {
+      name: 'vansh-katha-store',
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (state) => ({
+        kathas: Array.from(state.kathas.entries()),
+        recentKathas: state.recentKathas,
+      }),
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          // Convert kathas array back to Map
+          if (Array.isArray(state.kathas)) {
+            state.kathas = new Map(state.kathas as [KathaId, Katha][]);
+          }
+        }
+      },
+    }
+  )
+);
 
 // ═══════════════════════════════════════════════════════════
 // TIME-RIVER STORE (Main Feed)
@@ -452,6 +472,61 @@ export const useUIStore = create<UIState>()(
       name: 'vansh-ui',
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (state) => ({ colorScheme: state.colorScheme }),
+    }
+  )
+);
+
+// ═══════════════════════════════════════════════════════════
+// CUSTOM PROMPTS STORE
+// ═══════════════════════════════════════════════════════════
+
+export interface CustomPromptData {
+  id: string;
+  category: string;
+  emoji: string;
+  hindiTitle: string;
+  englishTitle: string;
+  description: string;
+  hint: string;
+  createdAt: string;
+}
+
+interface CustomPromptsState {
+  prompts: CustomPromptData[];
+  addPrompt: (prompt: Omit<CustomPromptData, 'id' | 'createdAt'>) => void;
+  removePrompt: (id: string) => void;
+  updatePrompt: (id: string, updates: Partial<CustomPromptData>) => void;
+}
+
+export const useCustomPromptsStore = create<CustomPromptsState>()(
+  persist(
+    (set) => ({
+      prompts: [],
+      addPrompt: (prompt) =>
+        set((state) => ({
+          prompts: [
+            ...state.prompts,
+            {
+              ...prompt,
+              id: `custom-${Date.now()}`,
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        })),
+      removePrompt: (id) =>
+        set((state) => ({
+          prompts: state.prompts.filter((p) => p.id !== id),
+        })),
+      updatePrompt: (id, updates) =>
+        set((state) => ({
+          prompts: state.prompts.map((p) =>
+            p.id === id ? { ...p, ...updates } : p
+          ),
+        })),
+    }),
+    {
+      name: 'vansh-custom-prompts',
+      storage: createJSONStorage(() => AsyncStorage),
     }
   )
 );

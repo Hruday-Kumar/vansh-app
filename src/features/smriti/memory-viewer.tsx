@@ -210,7 +210,7 @@ export function MemoryViewer({ memory, onClose, onPlayKatha }: MemoryViewerProps
                       style={styles.kathaCard}
                     >
                       <VoiceWaveform
-                        waveform={katha.waveform}
+                        waveform={katha.waveform || []}
                         duration={katha.duration}
                         narratorName={narrator ? `${narrator.firstName} ${narrator.lastName}` : undefined}
                       />
