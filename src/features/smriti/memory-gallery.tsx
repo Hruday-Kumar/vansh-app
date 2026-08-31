@@ -5,12 +5,12 @@
 import { Image } from 'expo-image';
 import React, { useCallback, useMemo } from 'react';
 import {
-  Dimensions,
-  FlatList,
-  Pressable,
-  RefreshControl,
-  StyleSheet,
-  View,
+    Dimensions,
+    FlatList,
+    Pressable,
+    RefreshControl,
+    StyleSheet,
+    View,
 } from 'react-native';
 import { SacredText } from '../../components';
 import { useMemoryStore, useUIStore } from '../../state';
@@ -23,26 +23,27 @@ const ITEM_GAP = VanshSpacing.xs;
 const ITEM_SIZE = (SCREEN_WIDTH - VanshSpacing.lg * 2 - ITEM_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS;
 
 interface MemoryGalleryProps {
+  memories?: SmritiMedia[];
   onMemoryPress?: (memory: SmritiMedia) => void;
   onRefresh?: () => Promise<void>;
   ListHeaderComponent?: React.ComponentType<any> | React.ReactElement;
 }
 
 export function MemoryGallery({
+  memories: memoriesProp,
   onMemoryPress,
   onRefresh,
   ListHeaderComponent,
 }: MemoryGalleryProps) {
   const { recentMemories, filters } = useMemoryStore();
+  const displayMemories = memoriesProp ?? recentMemories;
   const { openModal } = useUIStore();
   const [isRefreshing, setIsRefreshing] = React.useState(false);
   
   // Group memories by era/month
   const groupedMemories = useMemo(() => {
-    // For now, just return flat list
-    // In production, group by era or date
-    return recentMemories;
-  }, [recentMemories]);
+    return displayMemories;
+  }, [displayMemories]);
   
   const handleMemoryPress = useCallback((memory: SmritiMedia) => {
     if (onMemoryPress) {
@@ -70,7 +71,7 @@ export function MemoryGallery({
   
   const keyExtractor = useCallback((item: SmritiMedia) => item.id, []);
   
-  if (recentMemories.length === 0) {
+  if (displayMemories.length === 0) {
     return (
       <View style={styles.emptyContainer}>
         <SacredText variant="hero" color="gold" align="center">
@@ -80,7 +81,7 @@ export function MemoryGallery({
           No Memories Yet
         </SacredText>
         <SacredText variant="body" color="secondary" align="center" style={styles.emptyText}>
-          Begin preserving your family's heritage by adding the first memory.
+          Begin preserving your family&apos;s heritage by adding the first memory.
         </SacredText>
       </View>
     );

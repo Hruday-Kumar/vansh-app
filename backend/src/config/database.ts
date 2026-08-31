@@ -32,7 +32,7 @@ const pool = mysql.createPool({
   connectTimeout: 10000, // 10 seconds
   
   // Query settings
-  namedPlaceholders: true,
+  namedPlaceholders: false,
   dateStrings: false,
   
   // SSL for production (uncomment and configure for production)

@@ -7,6 +7,7 @@ import * as ImagePicker from 'expo-image-picker';
 import React, { useCallback, useState } from 'react';
 import {
     Alert,
+    Pressable,
     ScrollView,
     StyleSheet,
     TextInput,
@@ -44,8 +45,9 @@ export function MemoryUpload({ onComplete, onCancel }: MemoryUploadProps) {
     }
     
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
+      mediaTypes: ImagePicker.MediaTypeOptions.All,
+      allowsMultipleSelection: true,
+      selectionLimit: 10,
       quality: 0.8,
       exif: true,
     });
@@ -95,10 +97,11 @@ export function MemoryUpload({ onComplete, onCancel }: MemoryUploadProps) {
       
       // Create FormData for upload
       const formData = new FormData();
+      const isVideo = selectedImage.toLowerCase().includes('.mov') || selectedImage.toLowerCase().includes('.mp4');
       formData.append('file', {
         uri: selectedImage,
-        type: 'image/jpeg',
-        name: 'memory.jpg',
+        type: isVideo ? 'video/mp4' : 'image/jpeg',
+        name: isVideo ? 'memory.mp4' : 'memory.jpg',
       } as any);
       
       // Title is required - use user input or generate from timestamp
@@ -124,9 +127,10 @@ export function MemoryUpload({ onComplete, onCancel }: MemoryUploadProps) {
       
       if (data.success) {
         // Add to local store with correct SmritiMedia properties
+        const isVideoType = isVideo;
         addMemory({
           id: data.data.id,
-          type: 'photo',
+          type: isVideoType ? 'video' : 'photo',
           uri: data.data.uri,
           uploadedAt: Date.now(),
           uploadedBy: user?.memberId as any,
@@ -246,15 +250,16 @@ export function MemoryUpload({ onComplete, onCancel }: MemoryUploadProps) {
         {/* Tag Members */}
         <View style={styles.field}>
           <SacredText variant="label" color="muted" style={styles.label}>
-            Who's in This Photo?
+            Who&apos;s in This Photo?
           </SacredText>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             <View style={styles.memberList}>
               {membersList.slice(0, 10).map(member => {
                 const isSelected = taggedMembers.includes(member.id);
                 return (
-                  <View
+                  <Pressable
                     key={member.id}
+                    onPress={() => toggleMemberTag(member.id)}
                     style={[styles.memberItem, isSelected && styles.memberSelected]}
                   >
                     <MemberAvatar
@@ -265,7 +270,7 @@ export function MemoryUpload({ onComplete, onCancel }: MemoryUploadProps) {
                       showName
                       style={{ opacity: isSelected ? 1 : 0.6 }}
                     />
-                  </View>
+                  </Pressable>
                 );
               })}
             </View>

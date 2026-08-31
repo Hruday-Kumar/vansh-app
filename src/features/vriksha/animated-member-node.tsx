@@ -1,11 +1,11 @@
 /**
- * ANIMATED MEMBER NODE - Clean Family Member Card
+ * ANIMATED MEMBER NODE - Heritage-Styled Family Member Card
  * 
  * Features:
- * - Smooth scale transitions on press
- * - Gender-based gradient backgrounds
- * - Clean card design with minimal borders
- * - Photo with fallback initials
+ * - Prominent photo display with golden ring
+ * - Heritage gradient backgrounds
+ * - Elegant card design with warm shadows
+ * - Photo with decorative border
  * - Relationship badge overlay
  */
 
@@ -33,41 +33,46 @@ interface AnimatedMemberNodeProps {
   onLongPress?: (node: LayoutNode) => void;
 }
 
-const NODE_WIDTH = 120;
-const NODE_HEIGHT = 150;
+const NODE_WIDTH = 130;
+const NODE_HEIGHT = 160;
 
 const COLORS = {
   male: {
-    gradient: ['#60A5FA', '#3B82F6'] as const,
-    bg: '#EFF6FF',
-    border: '#93C5FD',
-    accent: '#3B82F6',
+    gradient: [VanshColors.neelam[400], VanshColors.neelam[600]] as const,
+    bg: '#F0F9F9',
+    border: VanshColors.neelam[400],
+    accent: VanshColors.neelam[500],
+    ring: VanshColors.neelam[400],
   },
   female: {
-    gradient: ['#F472B6', '#EC4899'] as const,
-    bg: '#FDF2F8',
-    border: '#F9A8D4',
-    accent: '#EC4899',
+    gradient: [VanshColors.padma[400], VanshColors.sindoor[600]] as const,
+    bg: '#FFF5F7',
+    border: VanshColors.padma[400],
+    accent: VanshColors.padma[500],
+    ring: VanshColors.padma[400],
   },
   other: {
-    gradient: ['#A78BFA', '#8B5CF6'] as const,
-    bg: '#F5F3FF',
-    border: '#C4B5FD',
-    accent: '#8B5CF6',
+    gradient: [VanshColors.chandan[400], VanshColors.chandan[600]] as const,
+    bg: '#FAF7F2',
+    border: VanshColors.chandan[400],
+    accent: VanshColors.chandan[500],
+    ring: VanshColors.chandan[400],
   },
   deceased: {
-    gradient: ['#9CA3AF', '#6B7280'] as const,
-    bg: '#F9FAFB',
-    border: '#D1D5DB',
-    accent: '#6B7280',
+    gradient: [VanshColors.masi[300], VanshColors.masi[500]] as const,
+    bg: VanshColors.khadi[50],
+    border: VanshColors.masi[300],
+    accent: VanshColors.masi[500],
+    ring: VanshColors.masi[300],
   },
   root: {
-    border: '#F59E0B',
-    bg: '#FFFBEB',
+    border: VanshColors.suvarna[500],
+    bg: VanshColors.suvarna[50],
+    ring: VanshColors.suvarna[500],
   },
   selected: {
-    border: '#10B981',
-    bg: '#ECFDF5',
+    border: VanshColors.suvarna[400],
+    bg: VanshColors.suvarna[50],
   },
 };
 
@@ -132,6 +137,12 @@ export const AnimatedMemberNode = memo(function AnimatedMemberNode({
   }));
   
   // Visual states
+  const ringColor = isSelected
+    ? COLORS.selected.border
+    : isRoot
+      ? COLORS.root.ring
+      : (isHighlighted ? COLORS.selected.border : colorScheme.ring);
+  
   const borderColor = isSelected
     ? COLORS.selected.border
     : isRoot
@@ -156,44 +167,54 @@ export const AnimatedMemberNode = memo(function AnimatedMemberNode({
     lifeSpan = deathYear ? `${birthYear} – ${deathYear}` : `b. ${birthYear}`;
   }
   
+  const hasPhoto = !!person?.photoUri;
+  
   return (
     <GestureDetector gesture={composed}>
       <Animated.View style={[styles.wrapper, containerStyle]}>
-        {/* Selection ring */}
+        {/* Selection / highlight ring */}
         {(isSelected || isHighlighted) && (
-          <View style={[styles.selectionRing, { borderColor }]} />
+          <View style={[styles.selectionRing, { borderColor: ringColor }]} />
         )}
         
         {/* Main Card */}
         <View style={[styles.card, { borderColor, backgroundColor: cardBg }]}>
-          {/* Root badge */}
+          {/* Root crown badge */}
           {isRoot && (
             <View style={styles.rootBadge}>
-              <Text style={styles.rootBadgeText}>YOU</Text>
+              <LinearGradient
+                colors={[VanshColors.suvarna[400], VanshColors.suvarna[600]]}
+                style={styles.rootBadgeGradient}
+              >
+                <Text style={styles.rootBadgeText}>👑 YOU</Text>
+              </LinearGradient>
             </View>
           )}
           
-          {/* Avatar */}
-          <View style={[styles.avatarContainer, { borderColor: colorScheme.border }]}>
-            {person?.photoUri ? (
-              <Image
-                source={{ uri: person.photoUri }}
-                style={[styles.avatarImage, !isAlive && styles.avatarDeceased]}
-                fadeDuration={0}
-              />
-            ) : (
-              <LinearGradient colors={colorScheme.gradient} style={styles.avatarGradient}>
-                <Text style={styles.initialsText}>
-                  {getInitials(person?.firstName, person?.lastName)}
-                </Text>
-              </LinearGradient>
-            )}
-            
-            {!isAlive && (
-              <View style={styles.deceasedOverlay}>
-                <Text style={styles.crossText}>†</Text>
-              </View>
-            )}
+          {/* Avatar with decorative ring */}
+          <View style={[styles.avatarOuter, { borderColor: ringColor }]}>
+            <View style={[styles.avatarContainer, { borderColor: colorScheme.border }]}>
+              {hasPhoto ? (
+                <Image
+                  source={{ uri: person!.photoUri }}
+                  style={[styles.avatarImage, !isAlive && styles.avatarDeceased]}
+                  fadeDuration={0}
+                  resizeMode="cover"
+                />
+              ) : (
+                <LinearGradient colors={colorScheme.gradient} style={styles.avatarGradient}>
+                  <Text style={styles.initialsText}>
+                    {getInitials(person?.firstName, person?.lastName)}
+                  </Text>
+                </LinearGradient>
+              )}
+              
+              {!isAlive && (
+                <View style={styles.deceasedOverlay}>
+                  <Text style={styles.crossText}>†</Text>
+                </View>
+              )}
+            </View>
           </View>
           
           {/* Name */}
@@ -206,10 +227,18 @@ export const AnimatedMemberNode = memo(function AnimatedMemberNode({
             <Text style={styles.lifeSpan}>{lifeSpan}</Text>
           )}
           
+          {/* Gender indicator dot */}
+          <View style={[styles.genderDot, { backgroundColor: colorScheme.accent }]} />
+          
           {/* Relationship Badge */}
           {relationLabel && !isRoot && (
             <View style={styles.relationBadge}>
-              <Text style={styles.relationText}>{relationLabel}</Text>
+              <LinearGradient
+                colors={[VanshColors.suvarna[50], VanshColors.suvarna[100]]}
+                style={styles.relationBadgeInner}
+              >
+                <Text style={styles.relationText}>{relationLabel}</Text>
+              </LinearGradient>
             </View>
           )}
         </View>
@@ -227,57 +256,65 @@ const styles = StyleSheet.create({
   },
   selectionRing: {
     position: 'absolute',
-    width: NODE_WIDTH + 10,
-    height: NODE_HEIGHT + 10,
-    borderRadius: 20,
+    width: NODE_WIDTH + 12,
+    height: NODE_HEIGHT + 12,
+    borderRadius: 22,
     borderWidth: 2.5,
+    borderStyle: 'dashed',
   },
   card: {
     width: NODE_WIDTH,
     height: NODE_HEIGHT,
     backgroundColor: '#FFFFFF',
-    borderRadius: 16,
+    borderRadius: 18,
     borderWidth: 2,
     padding: 8,
     alignItems: 'center',
     justifyContent: 'flex-start',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowColor: VanshColors.masi[800],
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
   },
   rootBadge: {
     position: 'absolute',
-    top: -9,
-    left: '50%',
-    marginLeft: -16,
-    backgroundColor: '#F59E0B',
-    paddingHorizontal: 10,
-    paddingVertical: 2,
-    borderRadius: 10,
+    top: -11,
     zIndex: 10,
+  },
+  rootBadgeGradient: {
+    paddingHorizontal: 12,
+    paddingVertical: 3,
+    borderRadius: 12,
   },
   rootBadgeText: {
     fontSize: 9,
     fontWeight: '800',
     color: '#FFF',
-    letterSpacing: 1,
+    letterSpacing: 0.8,
+  },
+  avatarOuter: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
+    marginTop: 2,
   },
   avatarContainer: {
     width: 54,
     height: 54,
     borderRadius: 27,
-    borderWidth: 2,
     overflow: 'hidden',
-    marginBottom: 6,
   },
   avatarImage: {
     width: '100%',
     height: '100%',
   },
   avatarDeceased: {
-    opacity: 0.6,
+    opacity: 0.5,
   },
   avatarGradient: {
     width: '100%',
@@ -289,10 +326,13 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: '#FFFFFF',
+    textShadowColor: 'rgba(0,0,0,0.2)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
   deceasedOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0,0,0,0.25)',
+    backgroundColor: 'rgba(0,0,0,0.3)',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -303,39 +343,55 @@ const styles = StyleSheet.create({
   },
   name: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#1F2937',
+    fontWeight: '700',
+    color: VanshColors.masi[800],
     textAlign: 'center',
     marginBottom: 2,
     lineHeight: 15,
+    letterSpacing: -0.2,
   },
   deceasedText: {
-    color: '#9CA3AF',
+    color: VanshColors.masi[400],
+    fontStyle: 'italic',
   },
   lifeSpan: {
     fontSize: 10,
-    color: '#9CA3AF',
+    color: VanshColors.masi[400],
     textAlign: 'center',
+    fontWeight: '500',
+  },
+  genderDot: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
   },
   relationBadge: {
     position: 'absolute',
     bottom: 4,
     left: 4,
     right: 4,
-    backgroundColor: VanshColors.suvarna[50],
-    paddingVertical: 2,
+    borderRadius: 10,
+    overflow: 'hidden',
+  },
+  relationBadgeInner: {
+    paddingVertical: 3,
     paddingHorizontal: 6,
-    borderRadius: 8,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: VanshColors.suvarna[200],
+    borderRadius: 10,
   },
   relationText: {
     fontSize: 8,
-    fontWeight: '700',
+    fontWeight: '800',
     color: VanshColors.suvarna[700],
     textTransform: 'uppercase',
-    letterSpacing: 0.3,
+    letterSpacing: 0.4,
   },
 });
 

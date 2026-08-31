@@ -5,9 +5,20 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { API_URL } from '../config/api';
+import { useVrikshaStore } from '../features/vriksha';
 import { api } from '../services/api';
-import { useAuthStore, useFamilyStore, useKathaStore, useMemoryStore } from '../state';
-import type { Katha, Vasiyat, VrikshaMember } from '../types';
+import { useAuthStore, useEventStore, useFamilyStore, useKathaStore, useMemoryStore, useNimantranStore } from '../state';
+import type { Katha, Nimantran, Vasiyat, VrikshaMember } from '../types';
+
+// ─── Helpers ──────────────────────────────────────────────
+
+/** Fetch with an AbortController timeout (default 8 s). Prevents indefinite loading when backend is down. */
+function fetchWithTimeout(url: string, options: RequestInit & { timeout?: number } = {}): Promise<Response> {
+  const { timeout = 8000, ...fetchOptions } = options;
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeout);
+  return fetch(url, { ...fetchOptions, signal: controller.signal }).finally(() => clearTimeout(id));
+}
 
 // ═══════════════════════════════════════════════════════════
 // AUTH HOOKS
@@ -27,13 +38,21 @@ export function useAuth() {
       console.log('🔐 Attempting login to:', `${API_URL}/auth/login`);
       
       // Call the login API directly with fetch since we need email/password
-      const response = await fetch(`${API_URL}/auth/login`, {
+      const response = await fetchWithTimeout(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
       });
       
       console.log('📡 Response status:', response.status);
+      
+      if (!response.ok) {
+        const text = await response.text();
+        let message = `Login failed (${response.status})`;
+        try { const parsed = JSON.parse(text); message = parsed.error?.message || message; } catch {}
+        setError(message);
+        return false;
+      }
       
       const data = await response.json();
       
@@ -52,7 +71,8 @@ export function useAuth() {
               newKatha: true, 
               vasiyatUnlocked: true, 
               familyMilestone: true, 
-              smaranNudge: true 
+              smaranNudge: true,
+              nimantranReminder: true 
             },
             lastLogin: new Date().toISOString() as any,
             deviceTokens: [],
@@ -90,7 +110,7 @@ export function useAuth() {
     try {
       console.log('📝 Attempting registration to:', `${API_URL}/auth/register`);
       
-      const response = await fetch(`${API_URL}/auth/register`, {
+      const response = await fetchWithTimeout(`${API_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -101,6 +121,14 @@ export function useAuth() {
           memberName 
         }),
       });
+      
+      if (!response.ok) {
+        const text = await response.text();
+        let message = `Registration failed (${response.status})`;
+        try { const parsed = JSON.parse(text); message = parsed.error?.message || message; } catch {}
+        setError(message);
+        return false;
+      }
       
       const data = await response.json();
       
@@ -119,7 +147,8 @@ export function useAuth() {
               newKatha: true, 
               vasiyatUnlocked: true, 
               familyMilestone: true, 
-              smaranNudge: true 
+              smaranNudge: true,
+              nimantranReminder: true 
             },
             lastLogin: new Date().toISOString() as any,
             deviceTokens: [],
@@ -163,9 +192,10 @@ export function useFamilyData() {
     setLoading(true);
     try {
       // Load family info
-      const familyRes = await fetch(`${API_URL}/families`, {
+      const familyRes = await fetchWithTimeout(`${API_URL}/families`, {
         headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` }
       });
+      if (!familyRes.ok) throw new Error(`Family fetch failed (${familyRes.status})`);
       const familyData = await familyRes.json();
       
       if (familyData.success) {
@@ -178,9 +208,10 @@ export function useFamilyData() {
       }
       
       // Load members
-      const membersRes = await fetch(`${API_URL}/members`, {
+      const membersRes = await fetchWithTimeout(`${API_URL}/members`, {
         headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` }
       });
+      if (!membersRes.ok) throw new Error(`Members fetch failed (${membersRes.status})`);
       const membersData = await membersRes.json();
       
       if (membersData.success) {
@@ -189,9 +220,11 @@ export function useFamilyData() {
         for (const m of membersData.data) {
           memberMap.set(m.id, {
             id: m.id,
+            familyId: user?.familyId || '',
             firstName: m.firstName,
             lastName: m.lastName,
             maidenName: m.maidenName,
+            nicknames: m.nicknames || [],
             gender: m.gender,
             birthDate: m.birthDate,
             birthPlace: m.birthPlace,
@@ -201,6 +234,8 @@ export function useFamilyData() {
             bio: m.bio,
             occupation: m.occupation,
             currentCity: m.currentCity,
+            memoryCount: m.memoryCount || 0,
+            kathaCount: m.kathaCount || 0,
             relationships: [],
           });
         }
@@ -213,7 +248,7 @@ export function useFamilyData() {
           const results = await Promise.all(
             batch.map(async (id: string) => {
               try {
-                const relRes = await fetch(`${API_URL}/members/${id}/relationships`, {
+                const relRes = await fetchWithTimeout(`${API_URL}/members/${id}/relationships`, {
                   headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` }
                 });
                 const relData = await relRes.json();
@@ -242,6 +277,8 @@ export function useFamilyData() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load family data');
+      // Fallback: sync from Vriksha (local family tree) store if API fails
+      syncFromVriksha(setMembers);
     } finally {
       setLoading(false);
     }
@@ -252,8 +289,48 @@ export function useFamilyData() {
       loadFamilyData();
     }
   }, [user?.familyId, loadFamilyData]);
+
+  // If membersList is still empty after initial load, sync from Vriksha store
+  useEffect(() => {
+    if (!isLoading && membersList.length === 0) {
+      syncFromVriksha(setMembers);
+    }
+  }, [isLoading, membersList.length, setMembers]);
   
   return { family, membersList, isLoading, error, refresh: loadFamilyData };
+}
+
+/**
+ * Sync members from the local Vriksha (family tree) store into useFamilyStore.
+ * This ensures features like memory tagging, invitations, and wisdom
+ * can see the same members that exist in the family tree when the API is unavailable.
+ */
+function syncFromVriksha(setMembers: (members: VrikshaMember[]) => void) {
+  const vrikshaMembers = useVrikshaStore.getState().members;
+  if (vrikshaMembers.size === 0) return;
+
+  const mapped: VrikshaMember[] = Array.from(vrikshaMembers.values()).map((m) => ({
+    id: m.id as any,
+    familyId: (m.familyId || '') as any,
+    firstName: m.firstName,
+    lastName: m.lastName,
+    maidenName: m.maidenName,
+    nicknames: m.nicknames || [],
+    gender: m.gender as any,
+    birthDate: m.birthDate as any,
+    birthPlace: m.birthPlace,
+    deathDate: m.deathDate as any,
+    isAlive: m.isAlive,
+    avatarUri: m.avatarUri,
+    bio: m.bio,
+    currentCity: m.currentCity,
+    occupation: m.occupation,
+    relationships: [],
+    memoryCount: m.memoryCount || 0,
+    kathaCount: m.kathaCount || 0,
+    hasVoiceSamples: m.hasVoiceSamples || false,
+  }));
+  setMembers(mapped);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -276,9 +353,10 @@ export function useMemories() {
   const loadMemories = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_URL}/memories`, {
+      const res = await fetchWithTimeout(`${API_URL}/memories`, {
         headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` }
       });
+      if (!res.ok) throw new Error(`Memories fetch failed (${res.status})`);
       const data = await res.json();
       
       if (data.success) {
@@ -303,7 +381,7 @@ export function useMemories() {
   const checkFamilySync = useCallback(async () => {
     try {
       const since = lastSyncAtRef.current || new Date(0).toISOString();
-      const res = await fetch(`${API_URL}/memories/sync/check?since=${encodeURIComponent(since)}`, {
+      const res = await fetchWithTimeout(`${API_URL}/memories/sync/check?since=${encodeURIComponent(since)}`, {
         headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` }
       });
       if (!res.ok) return; // e.g. rate limit hit — skip silently
@@ -336,10 +414,11 @@ export function useMemories() {
     if (metadata.description) formData.append('description', metadata.description);
     if (metadata.taggedMembers) formData.append('taggedMembers', JSON.stringify(metadata.taggedMembers));
     
-    const res = await fetch(`${API_URL}/memories`, {
+    const res = await fetchWithTimeout(`${API_URL}/memories`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` },
-      body: formData
+      body: formData,
+      timeout: 30000,
     });
     const data = await res.json();
     
@@ -355,7 +434,7 @@ export function useMemories() {
     loadMemories();
   }, [loadMemories]);
   
-  // Poll for family sync every 60 seconds while screen is active.
+  // Poll for family sync every 5 minutes while screen is active.
   // checkFamilySync is now stable so this effect runs exactly once.
   useEffect(() => {
     const interval = setInterval(checkFamilySync, 300_000); // 5 minutes
@@ -385,9 +464,10 @@ export function useKathas() {
   const loadKathas = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_URL}/kathas`, {
+      const res = await fetchWithTimeout(`${API_URL}/kathas`, {
         headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` }
       });
+      if (!res.ok) throw new Error(`Kathas fetch failed (${res.status})`);
       const data = await res.json();
       
       if (data.success && Array.isArray(data.data) && data.data.length > 0) {
@@ -416,10 +496,11 @@ export function useKathas() {
     if (metadata.narratorId) formData.append('narratorId', metadata.narratorId);
     if (metadata.type) formData.append('type', metadata.type);
     
-    const res = await fetch(`${API_URL}/kathas`, {
+    const res = await fetchWithTimeout(`${API_URL}/kathas`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` },
-      body: formData
+      body: formData,
+      timeout: 30000,
     });
     const data = await res.json();
     
@@ -438,6 +519,163 @@ export function useKathas() {
 }
 
 // ═══════════════════════════════════════════════════════════
+// EVENT HOOKS (Family Album Folders)
+// ═══════════════════════════════════════════════════════════
+
+export function useEvents() {
+  const { events, setEvents, addEvent, removeEvent, setLoading } = useEventStore();
+  const [isLoading, setIsLoadingLocal] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadEvents = useCallback(async () => {
+    setIsLoadingLocal(true);
+    setLoading(true);
+    try {
+      const res = await fetchWithTimeout(`${API_URL}/events`, {
+        headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` },
+      });
+      if (!res.ok) throw new Error(`Events fetch failed (${res.status})`);
+      const data = await res.json();
+
+      if (data.success) {
+        setEvents(data.data);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load events');
+    } finally {
+      setIsLoadingLocal(false);
+      setLoading(false);
+    }
+  }, [setEvents, setLoading]);
+
+  const createEvent = useCallback(async (eventData: {
+    name: string;
+    description?: string;
+    eventType?: string;
+    eventDate?: string;
+    eventEndDate?: string;
+    location?: string;
+    coverMemoryId?: string;
+    memoryIds?: string[];
+  }) => {
+    const res = await fetchWithTimeout(`${API_URL}/events`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${useAuthStore.getState().token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(eventData),
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      // Refresh full list to get formatted data with cover URI etc.
+      await loadEvents();
+      return data.data;
+    }
+    throw new Error(data.error?.message || 'Create event failed');
+  }, [loadEvents]);
+
+  const updateEvent = useCallback(async (eventId: string, updates: Record<string, any>) => {
+    const res = await fetchWithTimeout(`${API_URL}/events/${eventId}`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${useAuthStore.getState().token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(updates),
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      await loadEvents();
+      return data.data;
+    }
+    throw new Error(data.error?.message || 'Update event failed');
+  }, [loadEvents]);
+
+  const deleteEvent = useCallback(async (eventId: string) => {
+    const res = await fetchWithTimeout(`${API_URL}/events/${eventId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` },
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      removeEvent(eventId as any);
+      return true;
+    }
+    throw new Error(data.error?.message || 'Delete event failed');
+  }, [removeEvent]);
+
+  const addMemoriesToEvent = useCallback(async (eventId: string, memoryIds: string[]) => {
+    const res = await fetchWithTimeout(`${API_URL}/events/${eventId}/memories`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${useAuthStore.getState().token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ memoryIds }),
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      await loadEvents(); // Refresh counts
+      return data.data;
+    }
+    throw new Error(data.error?.message || 'Add memories failed');
+  }, [loadEvents]);
+
+  const loadEventMemories = useCallback(async (eventId: string, filters?: { type?: string; page?: number }) => {
+    const params = new URLSearchParams();
+    if (filters?.type) params.set('type', filters.type);
+    if (filters?.page) params.set('page', filters.page.toString());
+
+    const res = await fetchWithTimeout(`${API_URL}/events/${eventId}/memories?${params}`, {
+      headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` },
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      return { memories: data.data, meta: data.meta };
+    }
+    throw new Error(data.error?.message || 'Load event memories failed');
+  }, []);
+
+  const removeMemoryFromEvent = useCallback(async (eventId: string, memoryId: string) => {
+    const res = await fetchWithTimeout(`${API_URL}/events/${eventId}/memories/${memoryId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` },
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      await loadEvents();
+      return true;
+    }
+    throw new Error(data.error?.message || 'Remove memory failed');
+  }, [loadEvents]);
+
+  // Initial load
+  useEffect(() => {
+    loadEvents();
+  }, [loadEvents]);
+
+  return {
+    events,
+    isLoading,
+    error,
+    refresh: loadEvents,
+    createEvent,
+    updateEvent,
+    deleteEvent,
+    addMemoriesToEvent,
+    loadEventMemories,
+    removeMemoryFromEvent,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════
 // VASIYAT HOOKS
 // ═══════════════════════════════════════════════════════════
 
@@ -451,7 +689,7 @@ export function useVasiyats() {
     setIsLoading(true);
     try {
       // Load created vasiyats
-      const createdRes = await fetch(`${API_URL}/vasiyats`, {
+      const createdRes = await fetchWithTimeout(`${API_URL}/vasiyats`, {
         headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` }
       });
       const createdData = await createdRes.json();
@@ -461,7 +699,7 @@ export function useVasiyats() {
       }
       
       // Load received vasiyats
-      const receivedRes = await fetch(`${API_URL}/vasiyats?received=true`, {
+      const receivedRes = await fetchWithTimeout(`${API_URL}/vasiyats?received=true`, {
         headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` }
       });
       const receivedData = await receivedRes.json();
@@ -479,13 +717,13 @@ export function useVasiyats() {
   const createVasiyat = useCallback(async (vasiyatData: {
     title: string;
     contentText: string;
-    recipients: Array<{ memberId: string; relationshipLabel?: string }>;
+    recipients: { memberId: string; relationshipLabel?: string }[];
     triggerType: string;
     triggerDate?: string;
     triggerEvent?: string;
     mood?: string;
   }) => {
-    const res = await fetch(`${API_URL}/vasiyats`, {
+    const res = await fetchWithTimeout(`${API_URL}/vasiyats`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${useAuthStore.getState().token}`,
@@ -503,7 +741,7 @@ export function useVasiyats() {
   }, [loadVasiyats]);
   
   const unlockVasiyat = useCallback(async (vasiyatId: string) => {
-    const res = await fetch(`${API_URL}/vasiyats/${vasiyatId}/unlock`, {
+    const res = await fetchWithTimeout(`${API_URL}/vasiyats/${vasiyatId}/unlock`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` }
     });
@@ -546,7 +784,7 @@ export function useTraditions() {
     
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_URL}/families/${user.familyId}/traditions`, {
+      const res = await fetchWithTimeout(`${API_URL}/families/${user.familyId}/traditions`, {
         headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` }
       });
       const data = await res.json();
@@ -570,7 +808,7 @@ export function useTraditions() {
   }) => {
     if (!user?.familyId) return;
     
-    const res = await fetch(`${API_URL}/families/${user.familyId}/traditions`, {
+    const res = await fetchWithTimeout(`${API_URL}/families/${user.familyId}/traditions`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${useAuthStore.getState().token}`,
@@ -613,7 +851,7 @@ export function useAddMember() {
   }) => {
     setIsLoading(true);
     try {
-      const res = await fetch(`${API_URL}/members`, {
+      const res = await fetchWithTimeout(`${API_URL}/members`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${useAuthStore.getState().token}`,
@@ -626,11 +864,17 @@ export function useAddMember() {
       if (data.success) {
         addMember({
           id: data.data.id,
+          familyId: useAuthStore.getState().user?.familyId || '',
           firstName: memberData.firstName,
           lastName: memberData.lastName,
+          nicknames: [],
           gender: memberData.gender,
           birthDate: memberData.birthDate,
           isAlive: memberData.isAlive !== false,
+          memoryCount: 0,
+          kathaCount: 0,
+          hasVoiceSamples: false,
+          relationships: [],
         } as VrikshaMember);
         return data.data;
       }
@@ -645,7 +889,7 @@ export function useAddMember() {
     toMemberId: string,
     relationshipType: string
   ) => {
-    const res = await fetch(`${API_URL}/members/${fromMemberId}/relationships`, {
+    const res = await fetchWithTimeout(`${API_URL}/members/${fromMemberId}/relationships`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${useAuthStore.getState().token}`,
@@ -685,4 +929,127 @@ export function useAddMember() {
   }, []);
   
   return { createMember, addRelationship, isLoading };
+}
+
+// ═══════════════════════════════════════════════════════════
+// NIMANTRAN (INVITATION) HOOKS
+// ═══════════════════════════════════════════════════════════
+
+export function useInvitations() {
+  const { invitations, setInvitations, addInvitation, removeInvitation } = useNimantranStore();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { user } = useAuthStore();
+
+  const loadInvitations = useCallback(async () => {
+    if (!user?.familyId) return;
+
+    setIsLoading(true);
+    try {
+      const res = await fetchWithTimeout(`${API_URL}/families/${user.familyId}/invitations`, {
+        headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` }
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        setInvitations(data.data);
+      }
+    } catch (err) {
+      // API may not exist yet - use local store data
+      setError(err instanceof Error ? err.message : 'Failed to load invitations');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user?.familyId, setInvitations]);
+
+  const createInvitation = useCallback(async (invitationData: {
+    title: string;
+    description?: string;
+    ceremonyType: string;
+    venue: string;
+    venueAddress?: string;
+    eventDate: string;
+    eventTime?: string;
+    mediaType: string;
+    cardUri?: string;
+    videoUri?: string;
+    recipientIds: string[];
+    reminders: any[];
+    dressCode?: string;
+    specialInstructions?: string;
+    contactPhone?: string;
+  }) => {
+    if (!user?.familyId || !user?.memberId) return;
+
+    setIsLoading(true);
+    try {
+      // Try API first
+      const res = await fetchWithTimeout(`${API_URL}/families/${user.familyId}/invitations`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${useAuthStore.getState().token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(invitationData)
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        addInvitation(data.data);
+        return data.data;
+      }
+      throw new Error(data.error?.message || 'Create failed');
+    } catch (err) {
+      // Fallback: create locally
+      const localInvitation: Nimantran = {
+        id: `inv_${Date.now()}` as any,
+        familyId: user.familyId,
+        title: invitationData.title,
+        description: invitationData.description,
+        ceremonyType: invitationData.ceremonyType as any,
+        venue: invitationData.venue,
+        venueAddress: invitationData.venueAddress,
+        eventDate: invitationData.eventDate,
+        eventTime: invitationData.eventTime,
+        mediaType: invitationData.mediaType as any,
+        cardUri: invitationData.cardUri,
+        videoUri: invitationData.videoUri,
+        createdBy: user.memberId,
+        createdAt: Date.now(),
+        status: 'sent',
+        sentAt: Date.now(),
+        recipients: invitationData.recipientIds.map((mid) => ({
+          memberId: mid as any,
+          rsvpStatus: 'pending' as const,
+          viewed: false,
+        })),
+        reminders: invitationData.reminders || [],
+        dressCode: invitationData.dressCode,
+        specialInstructions: invitationData.specialInstructions,
+        contactPhone: invitationData.contactPhone,
+      };
+      addInvitation(localInvitation);
+      return localInvitation;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user?.familyId, user?.memberId, addInvitation]);
+
+  const deleteInvitation = useCallback(async (id: string) => {
+    try {
+      await fetchWithTimeout(`${API_URL}/families/${user?.familyId}/invitations/${id}`, {
+        method: 'DELETE',
+        headers: { 'Authorization': `Bearer ${useAuthStore.getState().token}` }
+      });
+    } catch {
+      // Remove locally regardless
+    }
+    removeInvitation(id as any);
+  }, [user?.familyId, removeInvitation]);
+
+  useEffect(() => {
+    loadInvitations();
+  }, [loadInvitations]);
+
+  return { invitations, isLoading, error, refresh: loadInvitations, createInvitation, deleteInvitation };
 }

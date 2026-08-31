@@ -27,6 +27,7 @@ import Svg, {
     Stop,
     Text as SvgText,
 } from 'react-native-svg';
+import { VanshColors } from '../../theme';
 import type { Connector } from './types';
 
 const AnimatedLine = Animated.createAnimatedComponent(Line);
@@ -43,19 +44,19 @@ interface AnimatedConnectionLinesProps {
 
 const CONNECTION_COLORS = {
   'parent-child': {
-    normal: '#818CF8',
-    highlighted: '#6366F1',
-    glow: 'rgba(99, 102, 241, 0.25)',
+    normal: VanshColors.neelam[400],
+    highlighted: VanshColors.suvarna[500],
+    glow: 'rgba(212, 175, 55, 0.25)',
   },
   spouse: {
-    normal: '#F9A8D4',
-    highlighted: '#EC4899',
-    glow: 'rgba(236, 72, 153, 0.25)',
+    normal: VanshColors.padma[300],
+    highlighted: VanshColors.sindoor[500],
+    glow: 'rgba(224, 69, 69, 0.2)',
   },
   sibling: {
-    normal: '#6EE7B7',
-    highlighted: '#10B981',
-    glow: 'rgba(16, 185, 129, 0.25)',
+    normal: VanshColors.chandan[400],
+    highlighted: VanshColors.suvarna[500],
+    glow: 'rgba(212, 175, 55, 0.2)',
   },
 };
 
@@ -119,17 +120,15 @@ const SpouseConnection = memo(function SpouseConnection({
 
 interface BracketConnectionProps {
   parentX: number; parentY: number;
-  children: Array<{ x: number; y: number; id: string }>;
+  childPositions: { x: number; y: number; id: string }[];
   isHighlighted: boolean; index: number;
 }
 
 const BracketConnection = memo(function BracketConnection({
-  parentX, parentY, children, isHighlighted,
+  parentX, parentY, childPositions, isHighlighted,
 }: BracketConnectionProps) {
-  if (children.length === 0) return null;
-  
   const dashOffset = useSharedValue(0);
-  
+
   useEffect(() => {
     if (isHighlighted) {
       dashOffset.value = withRepeat(
@@ -140,26 +139,28 @@ const BracketConnection = memo(function BracketConnection({
       dashOffset.value = 0;
     }
   }, [isHighlighted]);
-  
+
   const animatedProps = useAnimatedProps(() => ({
     strokeDashoffset: dashOffset.value,
   }));
-  
+
+  if (childPositions.length === 0) return null;
+
   const colors = CONNECTION_COLORS['parent-child'];
   const lineColor = isHighlighted ? colors.highlighted : colors.normal;
   const strokeWidth = isHighlighted ? 2.5 : 1.5;
-  
-  const minChildX = Math.min(...children.map(c => c.x));
-  const maxChildX = Math.max(...children.map(c => c.x));
-  const childY = children[0].y;
+
+  const minChildX = Math.min(...childPositions.map(c => c.x));
+  const maxChildX = Math.max(...childPositions.map(c => c.x));
+  const childY = childPositions[0].y;
   const midY = parentY + (childY - parentY) / 2;
-  
+
   let pathData = `M ${parentX} ${parentY} L ${parentX} ${midY}`;
-  if (children.length > 1) {
+  if (childPositions.length > 1) {
     pathData += ` M ${minChildX} ${midY} L ${maxChildX} ${midY}`;
     pathData += ` M ${parentX} ${midY}`;
   }
-  
+
   return (
     <G>
       {isHighlighted && (
@@ -170,7 +171,7 @@ const BracketConnection = memo(function BracketConnection({
         strokeLinecap="round" strokeLinejoin="round" fill="none"
         strokeDasharray={isHighlighted ? '10,5' : undefined}
         animatedProps={animatedProps} />
-      {children.map((child, i) => (
+      {childPositions.map((child, i) => (
         <G key={`child-drop-${i}`}>
           {isHighlighted && (
             <Line x1={child.x} y1={midY} x2={child.x} y2={child.y}
@@ -267,12 +268,12 @@ export const AnimatedConnectionLines = memo(function AnimatedConnectionLines({
       style={[StyleSheet.absoluteFill, { zIndex: -1 }]}>
       <Defs>
         <LinearGradient id="parentChildGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-          <Stop offset="0%" stopColor="#818CF8" />
-          <Stop offset="100%" stopColor="#6366F1" />
+          <Stop offset="0%" stopColor={VanshColors.neelam[400]} />
+          <Stop offset="100%" stopColor={VanshColors.neelam[600]} />
         </LinearGradient>
         <LinearGradient id="spouseGradient" x1="0%" y1="0%" x2="100%" y2="0%">
-          <Stop offset="0%" stopColor="#F9A8D4" />
-          <Stop offset="100%" stopColor="#EC4899" />
+          <Stop offset="0%" stopColor={VanshColors.padma[300]} />
+          <Stop offset="100%" stopColor={VanshColors.sindoor[500]} />
         </LinearGradient>
       </Defs>
       
@@ -315,7 +316,7 @@ export const AnimatedConnectionLines = memo(function AnimatedConnectionLines({
         return (
           <BracketConnection key={`bracket-${groupIndex}-${key}`}
             parentX={parentX} parentY={parentY}
-            children={childPositions}
+            childPositions={childPositions}
             isHighlighted={highlighted} index={groupIndex} />
         );
       })}

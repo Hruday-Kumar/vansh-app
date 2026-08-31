@@ -11,14 +11,14 @@ import { calculateTreeLayout, membersToFamilyNodes } from './src/features/vriksh
 // Satya -> Daughter of Srinu & Rama
 
 const members = [
-    { id: '1', firstName: 'Ramalah', lastName: 'P.', gender: 'male' },
-    { id: '2', firstName: 'Venkateswarlu', lastName: 'P.', gender: 'male' },
-    { id: '3', firstName: 'Amulu', lastName: 'P.', gender: 'female' },
-    { id: '4', firstName: 'Srinu', lastName: 'P.', gender: 'male' },
-    { id: '5', firstName: 'Rama', lastName: 'P.', gender: 'female' },
-    { id: '6', firstName: 'Hruday', lastName: 'P.', gender: 'male' },
-    { id: '7', firstName: 'Dileep', lastName: 'P.', gender: 'male' },
-    { id: '8', firstName: 'Satya', lastName: 'P.', gender: 'female' },
+  { id: '1', firstName: 'Ramalah', lastName: 'P.', gender: 'male' },
+  { id: '2', firstName: 'Venkateswarlu', lastName: 'P.', gender: 'male' },
+  { id: '3', firstName: 'Amulu', lastName: 'P.', gender: 'female' },
+  { id: '4', firstName: 'Srinu', lastName: 'P.', gender: 'male' },
+  { id: '5', firstName: 'Rama', lastName: 'P.', gender: 'female' },
+  { id: '6', firstName: 'Hruday', lastName: 'P.', gender: 'male' },
+  { id: '7', firstName: 'Dileep', lastName: 'P.', gender: 'male' },
+  { id: '8', firstName: 'Satya', lastName: 'P.', gender: 'female' },
 ];
 
 // Relationships (Backend format: fromId, toId, type)
@@ -37,32 +37,32 @@ const members = [
 // Let's test this hypothesis.
 
 const relationships = [
-    // Venkat is son of Ramalah
-    { fromId: '2', toId: '1', type: 'father' },
+  // Venkat is son of Ramalah
+  { fromId: '2', toId: '1', type: 'father' },
 
-    // Srinu is son of Venkat
-    { fromId: '4', toId: '2', type: 'father' },
-    // Srinu is son of Amulu
-    { fromId: '4', toId: '3', type: 'mother' },
+  // Srinu is son of Venkat
+  { fromId: '4', toId: '2', type: 'father' },
+  // Srinu is son of Amulu
+  { fromId: '4', toId: '3', type: 'mother' },
 
-    // Venkat and Amulu are married
-    { fromId: '2', toId: '3', type: 'wife' },
-    { fromId: '3', toId: '2', type: 'husband' },
+  // Venkat and Amulu are married
+  { fromId: '2', toId: '3', type: 'wife' },
+  { fromId: '3', toId: '2', type: 'husband' },
 
-    // Srinu and Rama are married
-    { fromId: '4', toId: '5', type: 'wife' },
-    { fromId: '5', toId: '4', type: 'husband' },
+  // Srinu and Rama are married
+  { fromId: '4', toId: '5', type: 'wife' },
+  { fromId: '5', toId: '4', type: 'husband' },
 
-    // Hruday is son of Srinu
-    { fromId: '6', toId: '4', type: 'father' },
-    // Hruday is son of Rama
-    { fromId: '6', toId: '5', type: 'mother' },
+  // Hruday is son of Srinu
+  { fromId: '6', toId: '4', type: 'father' },
+  // Hruday is son of Rama
+  { fromId: '6', toId: '5', type: 'mother' },
 
-    // Dileep is son of Srinu
-    { fromId: '7', toId: '4', type: 'father' },
+  // Dileep is son of Srinu
+  { fromId: '7', toId: '4', type: 'father' },
 
-    // Satya is daughter of Srinu
-    { fromId: '8', toId: '4', type: 'father' },
+  // Satya is daughter of Srinu
+  { fromId: '8', toId: '4', type: 'father' },
 ];
 
 console.log("--- MOCK DATA SIMULATION ---");
@@ -71,15 +71,15 @@ const { nodes, personData } = membersToFamilyNodes(members, relationships);
 
 console.log("\n--- NODES STRUCTURE ---");
 nodes.forEach(n => {
-    console.log(`Node ${n.id} (${personData.get(n.id)?.firstName}):`);
-    console.log(`  Parents: ${n.parents.map(p => p.id).join(', ')}`);
-    console.log(`  Children: ${n.children.map(c => c.id).join(', ')}`);
+  console.log(`Node ${n.id} (${personData.get(n.id)?.firstName}):`);
+  console.log(`  Parents: ${n.parents.map(p => p.id).join(', ')}`);
+  console.log(`  Children: ${n.children.map(c => c.id).join(', ')}`);
 });
 
 const layout = calculateTreeLayout(nodes, personData, '1'); // Root is Ramalah
 
 console.log("\n--- LAYOUT POSITIONS ---");
 layout.nodes.forEach(n => {
-    console.log(`Node ${n.id}: Gen ${n.generation}, X=${n.x}, Y=${n.y}`);
+  console.log(`Node ${n.id}: Gen ${n.generation}, X=${n.x}, Y=${n.y}`);
 });
 

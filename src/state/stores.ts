@@ -10,9 +10,13 @@ import { create } from 'zustand';
 import { createJSONStorage, persist, StateStorage } from 'zustand/middleware';
 import type {
     Era,
+    EventId,
+    FamilyEvent,
+    InvitationId,
     Katha,
     KathaId,
     MemberId, MemoryId,
+    Nimantran,
     SmritiMedia,
     TimeRiverItem,
     VanshFamily, VanshUser, VrikshaMember
@@ -170,7 +174,7 @@ interface MemoryState {
   };
   
   // Upload state
-  uploadQueue: Array<{ id: string; progress: number; file: Blob }>;
+  uploadQueue: { id: string; progress: number; file: Blob }[];
   isUploading: boolean;
   
   // Actions
@@ -204,7 +208,7 @@ export const useMemoryStore = create<MemoryState>()((set, get) => ({
   setMemories: (memories) => {
     const memoriesMap = new Map<MemoryId, SmritiMedia>();
     memories.forEach((m) => memoriesMap.set(m.id, m));
-    set({ memories: memoriesMap, recentMemories: memories.slice(0, 20) });
+    set({ memories: memoriesMap, recentMemories: memories.slice(0, 200) });
   },
   
   addMemory: (memory) => set((state) => {
@@ -212,7 +216,7 @@ export const useMemoryStore = create<MemoryState>()((set, get) => ({
     newMap.set(memory.id, memory);
     return {
       memories: newMap,
-      recentMemories: [memory, ...state.recentMemories].slice(0, 20),
+      recentMemories: [memory, ...state.recentMemories].slice(0, 200),
     };
   }),
   
@@ -307,7 +311,7 @@ export const useKathaStore = create<KathaState>()(
       setKathas: (kathas) => {
         const kathasMap = new Map<KathaId, Katha>();
         kathas.forEach((k) => kathasMap.set(k.id, k));
-        set({ kathas: kathasMap, recentKathas: kathas.slice(0, 10) });
+        set({ kathas: kathasMap, recentKathas: kathas.slice(0, 100) });
       },
       
       addKatha: (katha) => set((state) => {
@@ -315,7 +319,7 @@ export const useKathaStore = create<KathaState>()(
         newMap.set(katha.id, katha);
         return {
           kathas: newMap,
-          recentKathas: [katha, ...state.recentKathas].slice(0, 10),
+          recentKathas: [katha, ...state.recentKathas].slice(0, 100),
         };
       }),
       
@@ -361,6 +365,52 @@ export const useKathaStore = create<KathaState>()(
     }
   )
 );
+
+// ═══════════════════════════════════════════════════════════
+// EVENT STORE (Family Album Folders)
+// ═══════════════════════════════════════════════════════════
+
+interface EventState {
+  events: FamilyEvent[];
+  selectedEvent: FamilyEvent | null;
+  isLoading: boolean;
+
+  // Actions
+  setEvents: (events: FamilyEvent[]) => void;
+  addEvent: (event: FamilyEvent) => void;
+  updateEvent: (id: EventId, updates: Partial<FamilyEvent>) => void;
+  removeEvent: (id: EventId) => void;
+  selectEvent: (event: FamilyEvent | null) => void;
+  setLoading: (loading: boolean) => void;
+}
+
+export const useEventStore = create<EventState>()((set) => ({
+  events: [],
+  selectedEvent: null,
+  isLoading: false,
+
+  setEvents: (events) => set({ events }),
+
+  addEvent: (event) => set((state) => ({
+    events: [event, ...state.events],
+  })),
+
+  updateEvent: (id, updates) => set((state) => ({
+    events: state.events.map((e) => (e.id === id ? { ...e, ...updates } : e)),
+    selectedEvent:
+      state.selectedEvent?.id === id
+        ? { ...state.selectedEvent, ...updates }
+        : state.selectedEvent,
+  })),
+
+  removeEvent: (id) => set((state) => ({
+    events: state.events.filter((e) => e.id !== id),
+    selectedEvent: state.selectedEvent?.id === id ? null : state.selectedEvent,
+  })),
+
+  selectEvent: (event) => set({ selectedEvent: event }),
+  setLoading: (isLoading) => set({ isLoading }),
+}));
 
 // ═══════════════════════════════════════════════════════════
 // TIME-RIVER STORE (Main Feed)
@@ -526,6 +576,87 @@ export const useCustomPromptsStore = create<CustomPromptsState>()(
     }),
     {
       name: 'vansh-custom-prompts',
+      storage: createJSONStorage(() => AsyncStorage),
+    }
+  )
+);
+
+// ═══════════════════════════════════════════════════════════
+// NIMANTRAN STORE (Invitations)
+// ═══════════════════════════════════════════════════════════
+
+interface NimantranState {
+  invitations: Nimantran[];
+  selectedInvitation: Nimantran | null;
+  isLoading: boolean;
+  error: string | null;
+
+  // Actions
+  setInvitations: (invitations: Nimantran[]) => void;
+  addInvitation: (invitation: Nimantran) => void;
+  updateInvitation: (id: InvitationId, updates: Partial<Nimantran>) => void;
+  removeInvitation: (id: InvitationId) => void;
+  selectInvitation: (invitation: Nimantran | null) => void;
+  updateRSVP: (invitationId: InvitationId, memberId: MemberId, status: string) => void;
+  setLoading: (loading: boolean) => void;
+  setError: (error: string | null) => void;
+}
+
+export const useNimantranStore = create<NimantranState>()(
+  persist(
+    (set, get) => ({
+      invitations: [],
+      selectedInvitation: null,
+      isLoading: false,
+      error: null,
+
+      setInvitations: (invitations) => set({ invitations }),
+
+      addInvitation: (invitation) =>
+        set((state) => ({
+          invitations: [invitation, ...state.invitations],
+        })),
+
+      updateInvitation: (id, updates) =>
+        set((state) => ({
+          invitations: state.invitations.map((inv) =>
+            inv.id === id ? { ...inv, ...updates } : inv
+          ),
+          selectedInvitation:
+            state.selectedInvitation?.id === id
+              ? { ...state.selectedInvitation, ...updates }
+              : state.selectedInvitation,
+        })),
+
+      removeInvitation: (id) =>
+        set((state) => ({
+          invitations: state.invitations.filter((inv) => inv.id !== id),
+          selectedInvitation:
+            state.selectedInvitation?.id === id ? null : state.selectedInvitation,
+        })),
+
+      selectInvitation: (invitation) => set({ selectedInvitation: invitation }),
+
+      updateRSVP: (invitationId, memberId, status) =>
+        set((state) => ({
+          invitations: state.invitations.map((inv) => {
+            if (inv.id !== invitationId) return inv;
+            return {
+              ...inv,
+              recipients: inv.recipients.map((r) =>
+                r.memberId === memberId
+                  ? { ...r, rsvpStatus: status as any, rsvpAt: Date.now() }
+                  : r
+              ),
+            };
+          }),
+        })),
+
+      setLoading: (isLoading) => set({ isLoading }),
+      setError: (error) => set({ error }),
+    }),
+    {
+      name: 'vansh-nimantran',
       storage: createJSONStorage(() => AsyncStorage),
     }
   )

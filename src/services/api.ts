@@ -5,26 +5,26 @@
 
 import { API_URL } from '../config/api';
 import type {
-  AddRelationshipRequest,
-  ApiResponse,
-  ChatWithEchoRequest, ChatWithEchoResponse,
-  CheckVasiyatUnlockRequest, CheckVasiyatUnlockResponse,
-  CreateMemberRequest,
-  CreateVasiyatRequest, CreateVasiyatResponse,
-  FamilyId,
-  GetAncestryRequest, GetAncestryResponse,
-  GetFamilyTreeRequest, GetFamilyTreeResponse,
-  GetHeritageMapRequest, GetHeritageMapResponse,
-  GetMemoriesRequest, GetMemoriesResponse,
-  GetNudgeRequest, GetNudgeResponse,
-  GetTimeRiverRequest, GetTimeRiverResponse,
-  GetVasiyatContentRequest, GetVasiyatContentResponse,
-  LoginRequest, LoginResponse,
-  MemberId,
-  RecordKathaRequest, RecordKathaResponse,
-  UploadMemoryRequest, UploadMemoryResponse,
-  VoicePhotoStitchRequest, VoicePhotoStitchResponse,
-  VrikshaMember,
+    AddRelationshipRequest,
+    ApiResponse,
+    ChatWithEchoRequest, ChatWithEchoResponse,
+    CheckVasiyatUnlockRequest, CheckVasiyatUnlockResponse,
+    CreateMemberRequest,
+    CreateVasiyatRequest, CreateVasiyatResponse,
+    FamilyId,
+    GetAncestryRequest, GetAncestryResponse,
+    GetFamilyTreeRequest, GetFamilyTreeResponse,
+    GetHeritageMapRequest, GetHeritageMapResponse,
+    GetMemoriesRequest, GetMemoriesResponse,
+    GetNudgeRequest, GetNudgeResponse,
+    GetTimeRiverRequest, GetTimeRiverResponse,
+    GetVasiyatContentRequest, GetVasiyatContentResponse,
+    LoginRequest, LoginResponse,
+    MemberId,
+    RecordKathaRequest, RecordKathaResponse,
+    UploadMemoryRequest, UploadMemoryResponse,
+    VoicePhotoStitchRequest, VoicePhotoStitchResponse,
+    VrikshaMember,
 } from '../types';
 
 // ═══════════════════════════════════════════════════════════
@@ -221,18 +221,17 @@ class VanshApiClient {
     if (req.includeDeceased !== undefined) params.set('includeDeceased', String(req.includeDeceased));
     if (req.includePrana !== undefined) params.set('includePrana', String(req.includePrana));
     
-    return this.request<GetFamilyTreeResponse>(`/vriksha?${params}`);
+    return this.request<GetFamilyTreeResponse>(`/members/tree/full?${params}`);
   }
   
   async getAncestry(req: GetAncestryRequest) {
     const params = new URLSearchParams({
-      memberId: req.memberId,
       direction: req.direction,
     });
     if (req.maxDepth) params.set('maxDepth', req.maxDepth.toString());
     if (req.branch) params.set('branch', req.branch);
     
-    return this.request<GetAncestryResponse>(`/vriksha/ancestry?${params}`);
+    return this.request<GetAncestryResponse>(`/members/${req.memberId}/ancestors?${params}`);
   }
   
   async createMember(familyId: FamilyId, req: CreateMemberRequest) {
@@ -250,11 +249,11 @@ class VanshApiClient {
     });
     formData.append('familyId', familyId);
     
-    return this.uploadFile<{ member: VrikshaMember }>('/vriksha/members', formData);
+    return this.uploadFile<{ member: VrikshaMember }>('/members', formData);
   }
   
   async addRelationship(req: AddRelationshipRequest) {
-    return this.request<{ success: boolean }>('/vriksha/relationships', {
+    return this.request<{ success: boolean }>(`/members/${req.fromMemberId}/relationships`, {
       method: 'POST',
       body: JSON.stringify(req),
     });
@@ -286,12 +285,12 @@ class VanshApiClient {
     }
     if (req.witnessIds) formData.append('witnessIds', JSON.stringify(req.witnessIds));
     
-    return this.uploadFile<CreateVasiyatResponse>('/vasiyat', formData);
+    return this.uploadFile<CreateVasiyatResponse>('/vasiyats', formData);
   }
   
   async getMyVasiyats(memberId: MemberId) {
     return this.request<{ created: CreateVasiyatResponse['vasiyat'][]; received: CreateVasiyatResponse['vasiyat'][] }>(
-      `/vasiyat?memberId=${memberId}`
+      `/vasiyats?memberId=${memberId}`
     );
   }
   
@@ -299,7 +298,7 @@ class VanshApiClient {
    * ⏰ CHECK IF VASIYAT CAN BE UNLOCKED
    */
   async checkVasiyatUnlock(req: CheckVasiyatUnlockRequest) {
-    return this.request<CheckVasiyatUnlockResponse>('/vasiyat/check-unlock', {
+    return this.request<CheckVasiyatUnlockResponse>(`/vasiyats/${req.vasiyatId}/unlock`, {
       method: 'POST',
       body: JSON.stringify(req),
     });
@@ -311,7 +310,7 @@ class VanshApiClient {
    */
   async getVasiyatContent(req: GetVasiyatContentRequest) {
     return this.request<GetVasiyatContentResponse>(
-      `/vasiyat/${req.vasiyatId}/content?recipientId=${req.recipientId}`
+      `/vasiyats/${req.vasiyatId}/content?recipientId=${req.recipientId}`
     );
   }
   

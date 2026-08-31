@@ -12,6 +12,8 @@ export type MemberId = string & { readonly __brand: 'MemberId' };
 export type MemoryId = string & { readonly __brand: 'MemoryId' };
 export type KathaId = string & { readonly __brand: 'KathaId' };
 export type VasiyatId = string & { readonly __brand: 'VasiyatId' };
+export type EventId = string & { readonly __brand: 'EventId' };
+export type InvitationId = string & { readonly __brand: 'InvitationId' };
 
 export type Timestamp = number;
 export type DateString = string; // ISO 8601
@@ -77,15 +79,42 @@ export interface Era {
 }
 
 // ═══════════════════════════════════════════════════════════
+// EVENTS (Family Album Folders)
+// ═══════════════════════════════════════════════════════════
+
+export type EventType = 'wedding' | 'birthday' | 'festival' | 'reunion' | 'trip' | 'ceremony' | 'milestone' | 'other';
+
+export interface FamilyEvent {
+  id: EventId;
+  familyId: FamilyId;
+  name: string;
+  description?: string;
+  eventType: EventType;
+  eventDate?: DateString;
+  eventEndDate?: DateString;
+  location?: string;
+  coverMemoryId?: MemoryId;
+  coverUri?: string;
+  coverType?: MediaType;
+  createdBy: MemberId;
+  creatorName?: string;
+  memoryCount: number;
+  videoCount: number;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+}
+
+// ═══════════════════════════════════════════════════════════
 // PILLAR 2: KATHA (Oral History) - Voice Overlays
 // ═══════════════════════════════════════════════════════════
 
 export interface Katha {
   id: KathaId;
-  type: 'voice_overlay' | 'standalone_story' | 'interview' | 'song';
+  type: 'voice_overlay' | 'standalone_story' | 'interview' | 'song' | 'video' | 'photo_story';
   
   // Audio data
   audioUri: string;
+  videoUri?: string; // For video-type kathas
   duration: number; // seconds
   waveform: number[]; // For visualization
   
@@ -570,4 +599,85 @@ export interface NotificationPreferences {
   vasiyatUnlocked: boolean;
   familyMilestone: boolean;
   smaranNudge: boolean; // The passive ingestion prompts
+  nimantranReminder: boolean; // Invitation reminders
+}
+
+// ═══════════════════════════════════════════════════════════
+// NIMANTRAN (Invitations) - Family Event Invitations
+// ═══════════════════════════════════════════════════════════
+
+export type CeremonyType =
+  | 'wedding' | 'engagement' | 'housewarming' | 'baby_shower'
+  | 'birthday' | 'anniversary' | 'puja' | 'mundan'
+  | 'thread_ceremony' | 'naming_ceremony' | 'graduation'
+  | 'retirement' | 'reunion' | 'festival' | 'other';
+
+export type InvitationMediaType = 'card' | 'video' | 'both';
+
+export type InvitationStatus = 'draft' | 'sent' | 'cancelled';
+
+export type RSVPStatus = 'pending' | 'accepted' | 'declined' | 'maybe';
+
+export interface Nimantran {
+  id: InvitationId;
+  familyId: FamilyId;
+
+  // Event details
+  title: string;
+  description?: string;
+  ceremonyType: CeremonyType;
+  venue: string;
+  venueAddress?: string;
+  venueLocation?: GeoLocation;
+
+  // Timing
+  eventDate: DateString;
+  eventEndDate?: DateString;
+  eventTime?: string;        // e.g. "10:00 AM"
+  eventEndTime?: string;
+
+  // Invitation media
+  mediaType: InvitationMediaType;
+  cardUri?: string;          // Image of the invitation card
+  videoUri?: string;         // Invitation video
+  thumbnailUri?: string;     // Preview thumbnail
+
+  // Creator
+  createdBy: MemberId;
+  createdAt: Timestamp;
+  updatedAt?: Timestamp;
+
+  // Status
+  status: InvitationStatus;
+  sentAt?: Timestamp;
+
+  // Recipients & RSVPs
+  recipients: NimantranRecipient[];
+
+  // Reminders
+  reminders: NimantranReminder[];
+
+  // Additional info
+  dressCode?: string;
+  specialInstructions?: string;
+  contactPhone?: string;
+  contactEmail?: string;
+}
+
+export interface NimantranRecipient {
+  memberId: MemberId;
+  rsvpStatus: RSVPStatus;
+  rsvpAt?: Timestamp;
+  rsvpNote?: string;
+  viewed: boolean;
+  viewedAt?: Timestamp;
+}
+
+export interface NimantranReminder {
+  id: string;
+  type: 'before_event';
+  daysBefore: number;        // e.g. 7, 3, 1
+  sent: boolean;
+  sentAt?: Timestamp;
+  scheduledAt?: Timestamp;
 }

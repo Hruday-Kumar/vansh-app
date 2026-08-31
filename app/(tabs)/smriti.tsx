@@ -11,18 +11,21 @@
 
 import { MaterialIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { KathaPlayer, KathaRecorder } from '../../src/features/katha';
-import { MemoryGallery, MemoryUpload, MemoryViewer } from '../../src/features/smriti';
-import { useKathas, useMemories } from '../../src/hooks';
-import { useFamilyStore, useKathaStore } from '../../src/state';
+import { KathaPlayer, KathaRecorder, PhotoStoryRecorder, TranscriptionPanel, VideoKathaRecorder } from '../../src/features/katha';
+import { CreateEventModal, EventAlbum, EventList, MemoryGallery, MemoryUpload, MemoryViewer, MosaicGallery, TimelineGallery, UploadProgressOverlay } from '../../src/features/smriti';
+import { DEMO_EVENTS, DEMO_KATHAS, DEMO_MEMBERS, DEMO_MEMORIES } from '../../src/features/smriti/demo-data';
+import { useEvents, useKathas, useMemories } from '../../src/hooks';
+import { useAuthStore, useFamilyStore, useKathaStore, useMemoryStore } from '../../src/state';
 import { VanshColors } from '../../src/theme';
-import type { Katha, SmritiMedia } from '../../src/types';
+import type { FamilyEvent, Katha, MemberId, SmritiMedia } from '../../src/types';
 
-type ViewMode = 'gallery' | 'viewer' | 'upload' | 'katha_list' | 'katha_recorder' | 'katha_player';
+type ViewMode = 'gallery' | 'viewer' | 'upload' | 'katha_list' | 'katha_recorder' | 'katha_player' | 'event_album' | 'video_recorder' | 'photo_story_recorder' | 'transcription';
+type StoryRecordType = 'voice' | 'video' | 'photo_story';
 type MediaTab = 'photos' | 'stories';
+type GalleryLayout = 'grid' | 'mosaic' | 'timeline';
 
 export default function SmritiScreen() {
   const insets = useSafeAreaInsets();
@@ -30,15 +33,53 @@ export default function SmritiScreen() {
   const [viewMode, setViewMode] = useState<ViewMode>('gallery');
   const [selectedMemory, setSelectedMemory] = useState<SmritiMedia | null>(null);
   const [selectedKatha, setSelectedKatha] = useState<Katha | null>(null);
+  const [selectedEvent, setSelectedEvent] = useState<FamilyEvent | null>(null);
   const [activeTab, setActiveTab] = useState<MediaTab>('photos');
+  const [galleryLayout, setGalleryLayout] = useState<GalleryLayout>('grid');
   const [isUploading, setIsUploading] = useState(false);
+  const [showCreateEvent, setShowCreateEvent] = useState(false);
+  const [pendingTranscription, setPendingTranscription] = useState<{ audioUri: string; duration: number } | null>(null);
+  const [isDemoMode, setIsDemoMode] = useState(false);
   
   const { memories, isLoading, refresh, syncInfo } = useMemories();
-  const { kathas, refresh: refreshKathas } = useKathas();
+  const { kathas, refresh: refreshKathas, uploadKatha } = useKathas();
+  const { events, createEvent, loadEventMemories, refresh: refreshEvents } = useEvents();
   const { recentKathas, addKatha } = useKathaStore();
-  const { getMember, family } = useFamilyStore();
+  const { getMember: getStoreMember, family } = useFamilyStore();
+  const { recentMemories, setMemories: setStoreMemories } = useMemoryStore();
+  const { setKathas: setStoreKathas } = useKathaStore();
   
   const displayKathas = kathas.length > 0 ? kathas : recentKathas;
+
+  // Demo mode: overlay demo data onto real data (local only — never modifies family store)
+  const effectiveMemories = isDemoMode
+    ? [...DEMO_MEMORIES, ...recentMemories]
+    : recentMemories;
+  const effectiveKathas = isDemoMode
+    ? [...DEMO_KATHAS, ...displayKathas]
+    : displayKathas;
+  const effectiveEvents = isDemoMode
+    ? [...DEMO_EVENTS, ...events]
+    : events;
+
+  // Local demo member lookup — falls back to real store, never mutates it
+  const demoMemberMap = useMemo(() => {
+    const map = new Map<string, (typeof DEMO_MEMBERS)[number]>();
+    for (const m of DEMO_MEMBERS) map.set(m.id, m);
+    return map;
+  }, []);
+
+  const getMember = useCallback((id: MemberId) => {
+    if (isDemoMode) {
+      const demo = demoMemberMap.get(id as string);
+      if (demo) return demo as any;
+    }
+    return getStoreMember(id);
+  }, [isDemoMode, demoMemberMap, getStoreMember]);
+
+  const toggleDemoMode = useCallback(() => {
+    setIsDemoMode(prev => !prev);
+  }, []);
   
   const handleMemoryPress = useCallback((memory: SmritiMedia) => {
     setSelectedMemory(memory);
@@ -51,32 +92,170 @@ export default function SmritiScreen() {
   }, [refresh]);
 
   const handleRecordComplete = useCallback(async (audioUri: string, duration: number) => {
-    setIsUploading(true);
+    // Go to transcription panel instead of saving immediately
+    setPendingTranscription({ audioUri, duration });
+    setViewMode('transcription');
+  }, []);
+
+  const handleTranscriptionComplete = useCallback(async (text: string) => {
+    if (!pendingTranscription) return;
+    const { audioUri, duration } = pendingTranscription;
+    
+    // Save locally immediately so it appears in the UI right away
+    addKatha({
+      id: `katha-${Date.now()}`,
+      audioUri,
+      duration,
+      transcript: text,
+      narratorId: useAuthStore.getState().user?.memberId || '',
+      type: 'standalone_story',
+      recordedAt: Date.now(),
+      language: 'en',
+      waveform: [],
+      linkedMedia: [],
+      linkedMembers: [],
+    } as any);
+    setPendingTranscription(null);
+    
+    // Also upload to backend for persistence across devices
     try {
-      addKatha({
-        id: `katha-${Date.now()}`,
-        audioUri,
-        duration,
-        transcript: '',
-        narratorId: '',
+      const blob = await fetch(audioUri).then(r => r.blob());
+      await uploadKatha(blob, {
+        title: text.slice(0, 60) || `Story - ${new Date().toLocaleDateString()}`,
+        narratorId: useAuthStore.getState().user?.memberId || '',
         type: 'standalone_story',
-        recordedAt: new Date().toISOString(),
-        language: 'en',
-        waveform: [],
-        linkedMedia: [],
-        linkedMembers: [],
-      } as any);
-      Alert.alert('Saved!', 'Your story has been recorded.', [
-        { text: 'OK', onPress: () => { setViewMode('gallery'); setActiveTab('stories'); refreshKathas(); } }
-      ]);
-    } catch (_error) {
-      Alert.alert('Save Failed', 'Could not save your story. Please try again.');
-      setViewMode('gallery');
-      setActiveTab('stories');
-    } finally {
-      setIsUploading(false);
+      });
+    } catch {
+      // Local save already succeeded — backend sync will catch up later
     }
+    
+    Alert.alert('Saved!', 'Your story has been recorded and transcribed.', [
+      { text: 'OK', onPress: () => { setViewMode('gallery'); setActiveTab('stories'); refreshKathas(); } }
+    ]);
+  }, [pendingTranscription, addKatha, refreshKathas, uploadKatha]);
+
+  const handleTranscriptionSkip = useCallback(async () => {
+    if (!pendingTranscription) return;
+    const { audioUri, duration } = pendingTranscription;
+    
+    addKatha({
+      id: `katha-${Date.now()}`,
+      audioUri,
+      duration,
+      transcript: '',
+      narratorId: useAuthStore.getState().user?.memberId || '',
+      type: 'standalone_story',
+      recordedAt: Date.now(),
+      language: 'en',
+      waveform: [],
+      linkedMedia: [],
+      linkedMembers: [],
+    } as any);
+    setPendingTranscription(null);
+    
+    try {
+      const blob = await fetch(audioUri).then(r => r.blob());
+      await uploadKatha(blob, {
+        title: `Story - ${new Date().toLocaleDateString()}`,
+        narratorId: useAuthStore.getState().user?.memberId || '',
+        type: 'standalone_story',
+      });
+    } catch {
+      // Local save already succeeded
+    }
+    
+    Alert.alert('Saved!', 'Your story has been recorded.', [
+      { text: 'OK', onPress: () => { setViewMode('gallery'); setActiveTab('stories'); refreshKathas(); } }
+    ]);
+  }, [pendingTranscription, addKatha, refreshKathas, uploadKatha]);
+
+  const handleEventPress = useCallback((event: FamilyEvent) => {
+    setSelectedEvent(event);
+    setViewMode('event_album');
+  }, []);
+
+  const handleCreateEvent = useCallback(async (data: {
+    name: string;
+    description?: string;
+    eventType: string;
+    eventDate?: string;
+    location?: string;
+  }) => {
+    await createEvent(data);
+    setShowCreateEvent(false);
+    refreshEvents();
+  }, [createEvent, refreshEvents]);
+
+  const handleVideoStoryComplete = useCallback((videoUri: string, duration: number) => {
+    addKatha({
+      id: `katha-video-${Date.now()}`,
+      audioUri: videoUri, // Video URI stored as audioUri for playback
+      videoUri,
+      duration,
+      transcript: '',
+      narratorId: '',
+      type: 'video',
+      recordedAt: Date.now(),
+      language: 'en',
+      waveform: [],
+      linkedMedia: [],
+      linkedMembers: [],
+    } as any);
+    Alert.alert('Saved!', 'Your video story has been recorded.', [
+      { text: 'OK', onPress: () => { setViewMode('gallery'); setActiveTab('stories'); refreshKathas(); } }
+    ]);
   }, [addKatha, refreshKathas]);
+
+  const handlePhotoStoryComplete = useCallback((data: {
+    audioUri: string;
+    duration: number;
+    syncPoints: any[];
+    linkedMedia: string[];
+    waveform: number[];
+  }) => {
+    addKatha({
+      id: `katha-photostory-${Date.now()}`,
+      audioUri: data.audioUri,
+      duration: data.duration,
+      transcript: '',
+      narratorId: '',
+      type: 'photo_story',
+      recordedAt: Date.now(),
+      language: 'en',
+      waveform: data.waveform,
+      syncPoints: data.syncPoints,
+      linkedMedia: data.linkedMedia,
+      linkedMembers: [],
+    } as any);
+    Alert.alert('Saved!', 'Your photo story has been recorded.', [
+      { text: 'OK', onPress: () => { setViewMode('gallery'); setActiveTab('stories'); refreshKathas(); } }
+    ]);
+  }, [addKatha, refreshKathas]);
+
+  const handleAddMemoryPress = useCallback(() => {
+    Alert.alert(
+      'Add to Memories',
+      'What would you like to add?',
+      [
+        { text: '📷 Add Photo / Video', onPress: () => setViewMode('upload') },
+        { text: '📁 Create Album', onPress: () => setShowCreateEvent(true) },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  }, []);
+
+  const handleStoryRecordPress = useCallback(() => {
+    Alert.alert(
+      'Record a Story',
+      'What kind of story would you like to record?',
+      [
+        { text: '🎙️ Voice Story', onPress: () => setViewMode('katha_recorder') },
+        { text: '🎬 Video Story', onPress: () => setViewMode('video_recorder') },
+        { text: '📸 Photo Story', onPress: () => setViewMode('photo_story_recorder') },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  }, []);
   
   // ─── Sub-views ───────────────────────────────────────
   
@@ -114,6 +293,62 @@ export default function SmritiScreen() {
   if (viewMode === 'katha_player' && selectedKatha) {
     return <KathaPlayer katha={selectedKatha} onClose={() => { setViewMode('gallery'); setActiveTab('stories'); }} />;
   }
+
+  if (viewMode === 'video_recorder') {
+    return (
+      <VideoKathaRecorder
+        onComplete={handleVideoStoryComplete}
+        onCancel={() => { setViewMode('gallery'); setActiveTab('stories'); }}
+      />
+    );
+  }
+
+  if (viewMode === 'photo_story_recorder') {
+    return (
+      <PhotoStoryRecorder
+        onComplete={handlePhotoStoryComplete}
+        onCancel={() => { setViewMode('gallery'); setActiveTab('stories'); }}
+      />
+    );
+  }
+
+  if (viewMode === 'transcription' && pendingTranscription) {
+    return (
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        <View style={styles.backHeader}>
+          <Pressable style={styles.backButton} onPress={handleTranscriptionSkip} hitSlop={12}>
+            <MaterialIcons name="arrow-back" size={22} color={VanshColors.masi[700]} />
+          </Pressable>
+          <Text style={styles.backHeaderTitle}>Transcribe</Text>
+          <View style={{ width: 40 }} />
+        </View>
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <TranscriptionPanel
+            audioUri={pendingTranscription.audioUri}
+            duration={pendingTranscription.duration}
+            familyName={family?.name}
+            onTranscriptionComplete={handleTranscriptionComplete}
+            onSkip={handleTranscriptionSkip}
+          />
+        </ScrollView>
+      </View>
+    );
+  }
+
+  if (viewMode === 'event_album' && selectedEvent) {
+    return (
+      <EventAlbum
+        event={selectedEvent}
+        onClose={() => { setViewMode('gallery'); refreshEvents(); }}
+        onMemoryPress={(memory) => {
+          setSelectedMemory(memory);
+          setViewMode('viewer');
+        }}
+        onAddMedia={() => setViewMode('upload')}
+        loadEventMemories={loadEventMemories}
+      />
+    );
+  }
   
   // ─── Main Gallery View ──────────────────────────────
   
@@ -124,16 +359,32 @@ export default function SmritiScreen() {
         <View style={styles.headerLeft}>
           <Text style={styles.title}>Memories</Text>
           <Text style={styles.subtitle}>
-            {(memories?.length || 0)} photos · {displayKathas.length} stories
+            {(effectiveMemories?.length || 0)} photos · {effectiveKathas.length} stories
           </Text>
         </View>
-        <Pressable
+        <View style={styles.headerRight}>
+          {/* Demo Mode Toggle */}
+          <Pressable
+            style={[styles.demoToggle, isDemoMode && styles.demoToggleActive]}
+            onPress={toggleDemoMode}
+            hitSlop={8}
+          >
+            <MaterialIcons
+              name={isDemoMode ? 'visibility' : 'visibility-off'}
+              size={16}
+              color={isDemoMode ? '#FFF' : VanshColors.masi[400]}
+            />
+            <Text style={[styles.demoToggleText, isDemoMode && styles.demoToggleTextActive]}>
+              {isDemoMode ? 'Demo' : 'Demo'}
+            </Text>
+          </Pressable>
+          <Pressable
           style={styles.addButton}
           onPress={() => {
             if (activeTab === 'stories') {
-              setViewMode('katha_recorder');
+              handleStoryRecordPress();
             } else {
-              setViewMode('upload');
+              handleAddMemoryPress();
             }
           }}
         >
@@ -153,6 +404,7 @@ export default function SmritiScreen() {
             </Text>
           </LinearGradient>
         </Pressable>
+        </View>
       </View>
       
       {/* ── Family Sync Banner ── */}
@@ -197,16 +449,78 @@ export default function SmritiScreen() {
           </Text>
         </Pressable>
       </View>
+
+      {/* ── Layout Switcher (photos only) ── */}
+      {activeTab === 'photos' && (
+        <View style={styles.layoutSwitcher}>
+          {([
+            { key: 'grid' as GalleryLayout, icon: 'grid-view' as const, label: 'Grid' },
+            { key: 'mosaic' as GalleryLayout, icon: 'dashboard' as const, label: 'Mosaic' },
+            { key: 'timeline' as GalleryLayout, icon: 'timeline' as const, label: 'Timeline' },
+          ]).map((layout) => (
+            <Pressable
+              key={layout.key}
+              style={[styles.layoutBtn, galleryLayout === layout.key && styles.layoutBtnActive]}
+              onPress={() => setGalleryLayout(layout.key)}
+            >
+              <MaterialIcons
+                name={layout.icon}
+                size={16}
+                color={galleryLayout === layout.key ? VanshColors.suvarna[600] : VanshColors.masi[400]}
+              />
+              <Text style={[styles.layoutBtnText, galleryLayout === layout.key && styles.layoutBtnTextActive]}>
+                {layout.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
       
       {/* ── Content ── */}
       {activeTab === 'photos' ? (
-        <MemoryGallery
-          onMemoryPress={handleMemoryPress}
-          onRefresh={async () => { await refresh(); }}
-        />
+        galleryLayout === 'mosaic' ? (
+          <MosaicGallery
+            memories={effectiveMemories}
+            onMemoryPress={handleMemoryPress}
+            onRefresh={async () => { await refresh(); }}
+            ListHeaderComponent={
+              <EventList
+                events={effectiveEvents}
+                onEventPress={handleEventPress}
+                onCreatePress={() => setShowCreateEvent(true)}
+              />
+            }
+          />
+        ) : galleryLayout === 'timeline' ? (
+          <TimelineGallery
+            memories={effectiveMemories}
+            onMemoryPress={handleMemoryPress}
+            onRefresh={async () => { await refresh(); }}
+            ListHeaderComponent={
+              <EventList
+                events={effectiveEvents}
+                onEventPress={handleEventPress}
+                onCreatePress={() => setShowCreateEvent(true)}
+              />
+            }
+          />
+        ) : (
+          <MemoryGallery
+            onMemoryPress={handleMemoryPress}
+            onRefresh={async () => { await refresh(); }}
+            memories={effectiveMemories}
+            ListHeaderComponent={
+              <EventList
+                events={effectiveEvents}
+                onEventPress={handleEventPress}
+                onCreatePress={() => setShowCreateEvent(true)}
+              />
+            }
+          />
+        )
       ) : (
         <ScrollView contentContainerStyle={styles.storiesList} showsVerticalScrollIndicator={false}>
-          {displayKathas.length === 0 ? (
+          {effectiveKathas.length === 0 ? (
             <View style={styles.emptyStories}>
               <View style={styles.emptyStoriesIcon}>
                 <MaterialIcons name="mic-none" size={40} color={VanshColors.suvarna[300]} />
@@ -215,7 +529,7 @@ export default function SmritiScreen() {
               <Text style={styles.emptyStoriesSubtitle}>
                 Record the voices of your family.{'\n'}Stories are preserved and shared forever.
               </Text>
-              <Pressable style={styles.recordBtn} onPress={() => setViewMode('katha_recorder')}>
+              <Pressable style={styles.recordBtn} onPress={handleStoryRecordPress}>
                 <LinearGradient
                   colors={[VanshColors.suvarna[400], VanshColors.suvarna[600]]}
                   start={{ x: 0, y: 0 }}
@@ -228,8 +542,10 @@ export default function SmritiScreen() {
               </Pressable>
             </View>
           ) : (
-            displayKathas.map((katha, i) => {
+            effectiveKathas.map((katha, i) => {
               const narrator = getMember(katha.narratorId);
+              const typeIcon = katha.type === 'video' ? 'videocam' : katha.type === 'photo_story' ? 'photo-library' : 'mic';
+              const typeLabel = katha.type === 'video' ? 'Video Story' : katha.type === 'photo_story' ? 'Photo Story' : (katha.transcript?.slice(0, 40) || 'Voice Story');
               return (
                 <Pressable
                   key={katha.id}
@@ -237,25 +553,38 @@ export default function SmritiScreen() {
                     onPress={() => { setSelectedKatha(katha); setViewMode('katha_player'); }}
                   >
                     <View style={styles.kathaCardLeft}>
-                      <View style={styles.kathaPlayBtn}>
-                        <MaterialIcons name="play-arrow" size={20} color="#FFF" />
+                      <View style={[styles.kathaPlayBtn, katha.type === 'video' && { backgroundColor: VanshColors.sindoor[500] }, katha.type === 'photo_story' && { backgroundColor: VanshColors.suvarna[700] }]}>
+                        <MaterialIcons name={katha.type === 'video' ? 'videocam' : 'play-arrow'} size={20} color="#FFF" />
                       </View>
                     </View>
                     <View style={styles.kathaCardContent}>
-                      <Text style={styles.kathaCardTitle} numberOfLines={1}>
-                        {katha.transcript?.slice(0, 40) || 'Voice Story'}
-                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={styles.kathaCardTitle} numberOfLines={1}>
+                          {typeLabel}
+                        </Text>
+                        {katha.type !== 'voice_overlay' && katha.type !== 'standalone_story' && (
+                          <View style={styles.kathaTypeBadge}>
+                            <MaterialIcons name={typeIcon as any} size={10} color={VanshColors.suvarna[600]} />
+                          </View>
+                        )}
+                      </View>
                       <Text style={styles.kathaCardSubtitle}>
                         {narrator ? `${narrator.firstName} ${narrator.lastName}` : 'Family Member'} · {formatDuration(katha.duration)}
                       </Text>
                     </View>
                     <View style={styles.kathaWave}>
-                      {[0.3, 0.6, 1, 0.7, 0.4, 0.8, 0.5, 0.9, 0.3, 0.6].map((h, idx) => (
-                        <View
-                          key={idx}
-                          style={[styles.waveBar, { height: h * 20, backgroundColor: VanshColors.suvarna[300 + (idx % 3) * 100 as 300 | 400 | 500] }]}
-                        />
-                      ))}
+                      {katha.type === 'video' ? (
+                        <MaterialIcons name="movie" size={24} color={VanshColors.sindoor[300]} />
+                      ) : katha.type === 'photo_story' ? (
+                        <MaterialIcons name="burst-mode" size={24} color={VanshColors.suvarna[400]} />
+                      ) : (
+                        [0.3, 0.6, 1, 0.7, 0.4, 0.8, 0.5, 0.9, 0.3, 0.6].map((h, idx) => (
+                          <View
+                            key={idx}
+                            style={[styles.waveBar, { height: h * 20, backgroundColor: VanshColors.suvarna[300 + (idx % 3) * 100 as 300 | 400 | 500] }]}
+                          />
+                        ))
+                      )}
                     </View>
                   </Pressable>
               );
@@ -263,6 +592,16 @@ export default function SmritiScreen() {
           )}
         </ScrollView>
       )}
+
+      {/* ── Create Event Modal ── */}
+      <CreateEventModal
+        visible={showCreateEvent}
+        onClose={() => setShowCreateEvent(false)}
+        onSubmit={handleCreateEvent}
+      />
+
+      {/* ── Upload Progress Overlay ── */}
+      <UploadProgressOverlay bottomOffset={80} />
     </View>
   );
 }
@@ -319,6 +658,34 @@ const styles = StyleSheet.create({
   addButtonText: {
     fontSize: 14,
     fontWeight: '700',
+    color: '#FFF',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  demoToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 16,
+    backgroundColor: VanshColors.khadi[200],
+    borderWidth: 1,
+    borderColor: VanshColors.khadi[300],
+  },
+  demoToggleActive: {
+    backgroundColor: VanshColors.suvarna[500],
+    borderColor: VanshColors.suvarna[600],
+  },
+  demoToggleText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: VanshColors.masi[400],
+  },
+  demoToggleTextActive: {
     color: '#FFF',
   },
   
@@ -411,6 +778,38 @@ const styles = StyleSheet.create({
     color: VanshColors.suvarna[600],
   },
   
+  // Layout switcher
+  layoutSwitcher: {
+    flexDirection: 'row',
+    marginHorizontal: 20,
+    marginBottom: 8,
+    gap: 6,
+  },
+  layoutBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    backgroundColor: VanshColors.khadi[100],
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  layoutBtnActive: {
+    backgroundColor: VanshColors.suvarna[50],
+    borderColor: VanshColors.suvarna[300],
+  },
+  layoutBtnText: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: VanshColors.masi[400],
+  },
+  layoutBtnTextActive: {
+    color: VanshColors.suvarna[600],
+    fontWeight: '600',
+  },
+  
   // Stories list
   storiesList: {
     paddingHorizontal: 20,
@@ -467,6 +866,14 @@ const styles = StyleSheet.create({
   waveBar: {
     width: 3,
     borderRadius: 1.5,
+  },
+  kathaTypeBadge: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: VanshColors.suvarna[100],
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   
   // Empty stories

@@ -16,14 +16,14 @@ import { MaterialIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import React, { useCallback, useRef, useState } from 'react';
 import {
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    Alert,
+    Modal,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import Animated, { FadeIn, SlideInDown, SlideOutDown } from 'react-native-reanimated';
@@ -32,9 +32,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { isFirebaseConfigured } from '../../config/firebase';
 import { VanshColors, VanshRadius } from '../../theme';
 import {
-  encodeTreeAsShareCode,
-  shareTreeAsFile,
-  type ShareMode
+    encodeTreeAsShareCode,
+    shareTreeAsFile,
+    type ShareMode
 } from './share-service';
 import { useVrikshaStore, type FamilyMember } from './vriksha-store';
 
@@ -214,7 +214,7 @@ export function ShareTreeModal({ visible, member, onClose }: ShareTreeModalProps
           </Text>
         </View>
         <Text style={styles.previewTitle}>
-          {member.firstName}'s Family Tree
+          {member.firstName}&apos;s Family Tree
         </Text>
         <Text style={styles.previewMeta}>{memberCount} members</Text>
       </View>
@@ -235,8 +235,8 @@ export function ShareTreeModal({ visible, member, onClose }: ShareTreeModalProps
           </Text>
           <Text style={styles.methodDesc}>
             {qrFeasible
-              ? 'Let someone scan this QR code from their device instantly'
-              : `Tree too large for QR (${memberCount} members). Use file sharing instead.`}
+              ? `Instant scan transfer (${shareCode?.length?.toLocaleString() ?? '?'} chars)`
+              : `Tree too large for QR (${memberCount} members, ${shareCode?.length?.toLocaleString() ?? '?'} chars). Use file sharing instead.`}
           </Text>
         </View>
         {qrFeasible
@@ -305,7 +305,7 @@ export function ShareTreeModal({ visible, member, onClose }: ShareTreeModalProps
               </Text>
             </View>
             <Text style={styles.qrInfoTitle}>
-              {member.firstName}'s Family Tree
+              {member.firstName}&apos;s Family Tree
             </Text>
             <Text style={styles.qrInfoMeta}>{memberCount} members</Text>
           </View>
@@ -316,7 +316,7 @@ export function ShareTreeModal({ visible, member, onClose }: ShareTreeModalProps
                 <Text style={styles.qrInstructionNumberText}>1</Text>
               </View>
               <Text style={styles.qrInstructionText}>
-                Open Vansh app on the recipient's device
+                Open Vansh app on the recipient&apos;s device
               </Text>
             </View>
             <View style={styles.qrInstructionRow}>

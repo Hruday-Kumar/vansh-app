@@ -3,6 +3,7 @@
  */
 
 import { Audio } from 'expo-av';
+import type { RecordingStatus } from 'expo-av/build/Audio/Recording.types';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Alert,
@@ -38,8 +39,32 @@ export function KathaRecorder({ linkedMemoryId, onComplete, onCancel }: KathaRec
   const [duration, setDuration] = useState(0);
   const [waveform, setWaveform] = useState<number[]>([]);
   const [recordedUri, setRecordedUri] = useState<string | null>(null);
+  const [currentLevel, setCurrentLevel] = useState(0);
   
   const timerRef = useRef<number | null>(null);
+
+  // Convert dB metering value (-160..0) to normalized amplitude (0..1)
+  const dbToAmplitude = useCallback((db: number): number => {
+    'worklet';
+    // dBFS ranges from -160 (silence) to 0 (max)
+    const minDb = -60; // treat anything below -60 as silence
+    const clamped = Math.max(minDb, Math.min(0, db));
+    return (clamped - minDb) / (0 - minDb); // Normalize to 0-1
+  }, []);
+
+  // Handle real-time recording status updates with metering
+  const onRecordingStatusUpdate = useCallback((status: RecordingStatus) => {
+    if (!status.isRecording) return;
+    const durationSec = Math.floor(status.durationMillis / 1000);
+    setDuration(durationSec);
+
+    if (status.metering !== undefined) {
+      const amplitude = dbToAmplitude(status.metering);
+      setCurrentLevel(amplitude);
+      setWaveform(prev => [...prev, amplitude]);
+      updateRecording(durationSec, []);
+    }
+  }, [dbToAmplitude, updateRecording]);
   
   // Animated recording indicator
   const pulseScale = useSharedValue(1);
@@ -96,24 +121,22 @@ export function KathaRecorder({ linkedMemoryId, onComplete, onCancel }: KathaRec
       });
       
       const { recording: newRecording } = await Audio.Recording.createAsync(
-        Audio.RecordingOptionsPresets.HIGH_QUALITY
+        {
+          ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
+          isMeteringEnabled: true,
+        }
       );
       
+      // Set up real metering status updates (every 100ms)
+      newRecording.setOnRecordingStatusUpdate(onRecordingStatusUpdate);
+      newRecording.setProgressUpdateInterval(100);
+
       setRecording(newRecording);
       setRecordedUri(null);
       setDuration(0);
       setWaveform([]);
+      setCurrentLevel(0);
       startRecording();
-      
-      // Start timer
-      timerRef.current = setInterval(() => {
-        setDuration(prev => prev + 1);
-        // Simulate waveform data - update separately to avoid setState during render
-        setWaveform(wave => {
-          const newWave = [...wave, Math.random() * 0.8 + 0.2];
-          return newWave;
-        });
-      }, 1000);
       
     } catch (error) {
       console.error('Failed to start recording:', error);
@@ -125,11 +148,6 @@ export function KathaRecorder({ linkedMemoryId, onComplete, onCancel }: KathaRec
     if (!recording) return;
     
     try {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-      
       stopRecording();
       
       await recording.stopAndUnloadAsync();
@@ -140,6 +158,7 @@ export function KathaRecorder({ linkedMemoryId, onComplete, onCancel }: KathaRec
       const uri = recording.getURI();
       setRecordedUri(uri);
       setRecording(null);
+      setCurrentLevel(0);
       
     } catch (error) {
       console.error('Failed to stop recording:', error);
@@ -192,7 +211,7 @@ export function KathaRecorder({ linkedMemoryId, onComplete, onCancel }: KathaRec
         </View>
         
         {/* Waveform Preview */}
-        {waveform.length > 0 && (
+        {(waveform.length > 0 || isRecording) && (
           <View style={styles.waveformContainer}>
             {waveform.slice(-30).map((amplitude, index) => (
               <View
@@ -200,7 +219,7 @@ export function KathaRecorder({ linkedMemoryId, onComplete, onCancel }: KathaRec
                 style={[
                   styles.waveformBar,
                   {
-                    height: 10 + amplitude * 40,
+                    height: 4 + amplitude * 46,
                     backgroundColor: isRecording
                       ? VanshColors.sindoor[500]
                       : VanshColors.suvarna[500],
@@ -208,6 +227,19 @@ export function KathaRecorder({ linkedMemoryId, onComplete, onCancel }: KathaRec
                 ]}
               />
             ))}
+            {/* Live level indicator when recording */}
+            {isRecording && (
+              <Animated.View
+                style={[
+                  styles.waveformBar,
+                  styles.liveBar,
+                  {
+                    height: 4 + currentLevel * 46,
+                    backgroundColor: VanshColors.sindoor[400],
+                  },
+                ]}
+              />
+            )}
           </View>
         )}
         
@@ -251,7 +283,7 @@ export function KathaRecorder({ linkedMemoryId, onComplete, onCancel }: KathaRec
         {/* Tips */}
         <View style={styles.tips}>
           <SacredText variant="caption" color="muted" align="center">
-            💡 Speak naturally, as if you're telling a loved one
+            💡 Speak naturally, as if you&apos;re telling a loved one
           </SacredText>
         </View>
       </View>
@@ -301,6 +333,11 @@ const styles = StyleSheet.create({
   waveformBar: {
     width: 4,
     borderRadius: 2,
+  },
+  liveBar: {
+    width: 6,
+    borderRadius: 3,
+    opacity: 0.8,
   },
   buttonContainer: {
     marginBottom: VanshSpacing.xl,

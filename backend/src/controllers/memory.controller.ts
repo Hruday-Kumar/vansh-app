@@ -6,10 +6,10 @@ import type { NextFunction, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../config/database';
 import { AppError } from '../middleware/error-handler';
-import { GeminiService } from '../services/gemini.service';
+import { geminiService } from '../services/gemini.service';
 
 export class MemoryController {
-  private gemini = new GeminiService();
+  private gemini = geminiService;
   
   /**
    * Get memories with filters
@@ -244,7 +244,7 @@ export class MemoryController {
         throw new AppError('No files uploaded', 400, 'NO_FILES');
       }
       
-      const results: Array<{ id: string; uri: string; type: string }> = [];
+      const results: { id: string; uri: string; type: string }[] = [];
       
       for (const file of req.files) {
         let type = 'document';

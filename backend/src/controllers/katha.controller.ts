@@ -6,10 +6,10 @@ import type { NextFunction, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import pool from '../config/database';
 import { AppError } from '../middleware/error-handler';
-import { GeminiService } from '../services/gemini.service';
+import { geminiService } from '../services/gemini.service';
 
 export class KathaController {
-  private gemini = new GeminiService();
+  private gemini = geminiService;
   
   /**
    * Get kathas with filters

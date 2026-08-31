@@ -1,5 +1,5 @@
 /**
- * 🔗 SHARE SERVICE - Family Tree Sharing (v2)
+ * 🔗 SHARE SERVICE - Family Tree Sharing (v3)
  * ═══════════════════════════════════════════════════════════
  *
  * Multiple sharing methods:
@@ -9,6 +9,14 @@
  * Share modes:
  *   - 'view_only'      → Read-only: recipient can view the tree
  *   - 'invite_to_join'  → Editable: recipient can view AND add members
+ *
+ * v3 improvements over v2:
+ *   - ID remapping: UUIDs → short numeric indices (0, 1, 2...)
+ *   - Pipe-delimited format: no JSON keys/braces/quotes overhead
+ *   - Deflate compression via pako (60-70% compression on top)
+ *   - Common familyId stored once, not per member
+ *   - Supports 15-20+ members in a single QR code
+ *   - Backwards-compatible: still decodes v1 and v2 codes
  *
  * v2 improvements over v1:
  *   - Base64url encoding (no +/= chars that break in messaging apps)
@@ -20,6 +28,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Sharing from 'expo-sharing';
+import { deflate, inflate } from 'pako';
 import { Share } from 'react-native';
 import type { BasicRelationType, FamilyMember, StoredRelation } from './vriksha-store';
 
@@ -122,6 +131,7 @@ interface CompactPayload {
 
 const V1_PREFIX = 'VANSH:1:';
 const V2_PREFIX = 'VANSH:2:';
+const V3_PREFIX = 'VANSH:3:';
 const STORAGE_KEY_IMPORTS = '@vansh/imported_trees';
 
 // ═══════════════════════════════════════════════════════════
@@ -279,14 +289,238 @@ function expandRelationV2(cr: CompactRelation): StoredRelation {
 }
 
 // ═══════════════════════════════════════════════════════════
-// ENCODE — Tree → Share Code (v2 compact)
+// v3 ULTRA-COMPACT — Pipe-delimited + Deflate compression
 // ═══════════════════════════════════════════════════════════
 
 /**
- * Encode the family tree as a compact v2 share code.
+ * v3 wire format (pipe-delimited, deflate-compressed):
  *
- * Typical reduction: ~60-70% smaller than v1.
- * A tree with 20 members goes from ~15KB to ~4-5KB in the code.
+ * Header line:    3|<mode:v/e>|<name>|<timestamp_b36>|<familyId>|<syncTreeId?>|<rootIdx>
+ * Member lines:   M|<idx>|<firstName>|<lastName>|<gender:m/f/o>|<alive:1/0>|<birth?>|<death?>|<occ?>|<place?>|<city?>
+ * Relation lines: R|<fromIdx>|<toIdx>|<type>|<subtype?>
+ *
+ * All fields joined by newlines, then deflated, then base64url encoded.
+ * Member IDs are remapped to short numeric indices (0, 1, 2...).
+ *
+ * Typical size: ~25 chars per member vs ~95 in v2.
+ * Supports 15-20+ members in a QR code (vs ~4 in v2).
+ */
+
+/** Encode bytes (Uint8Array) to base64url string */
+function bytesToBase64url(bytes: Uint8Array): string {
+  let b64 = '';
+  for (let i = 0; i < bytes.length; i += 3) {
+    const a = bytes[i];
+    const bVal = i + 1 < bytes.length ? bytes[i + 1] : 0;
+    const c = i + 2 < bytes.length ? bytes[i + 2] : 0;
+    b64 += B64_CHARS[a >> 2];
+    b64 += B64_CHARS[((a & 3) << 4) | (bVal >> 4)];
+    b64 += i + 1 < bytes.length ? B64_CHARS[((bVal & 15) << 2) | (c >> 6)] : '=';
+    b64 += i + 2 < bytes.length ? B64_CHARS[c & 63] : '=';
+  }
+  return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/** Decode base64url string to bytes (Uint8Array) */
+function base64urlToBytes(b64url: string): Uint8Array {
+  let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
+  while (b64.length % 4 !== 0) b64 += '=';
+
+  const byteArr: number[] = [];
+  let buffer = 0;
+  let bits = 0;
+  for (const ch of b64) {
+    if (ch === '=') break;
+    const idx = B64_CHARS.indexOf(ch);
+    if (idx === -1) continue;
+    buffer = (buffer << 6) | idx;
+    bits += 6;
+    if (bits >= 8) {
+      bits -= 8;
+      byteArr.push((buffer >> bits) & 0xFF);
+    }
+  }
+  return new Uint8Array(byteArr);
+}
+
+/** Escape pipe chars in user data to prevent delimiter collision */
+function esc(s: string | undefined): string {
+  if (!s) return '';
+  return s.replace(/\|/g, '\\|').replace(/\n/g, '\\n');
+}
+
+/** Unescape pipe chars */
+function unesc(s: string): string {
+  if (!s) return '';
+  return s.replace(/\\\|/g, '|').replace(/\\n/g, '\n');
+}
+
+function encodeV3(params: {
+  mode: ShareMode;
+  memberName: string;
+  members: FamilyMember[];
+  relations: StoredRelation[];
+  rootMemberId: string;
+  syncTreeId?: string;
+}): string {
+  // Step 1: Remap member IDs to short numeric indices
+  const idMap = new Map<string, number>();
+  params.members.forEach((m, idx) => idMap.set(m.id, idx));
+
+  const rootIdx = idMap.get(params.rootMemberId) ?? 0;
+  const familyId = params.members[0]?.familyId || 'fam';
+
+  // Step 2: Build pipe-delimited lines
+  const lines: string[] = [];
+
+  // Header line
+  lines.push([
+    '3',
+    params.mode === 'view_only' ? 'v' : 'e',
+    esc(params.memberName),
+    Math.floor(Date.now() / 1000).toString(36),
+    esc(familyId),
+    esc(params.syncTreeId || ''),
+    rootIdx.toString(),
+  ].join('|'));
+
+  // Member lines (order = index)
+  for (const m of params.members) {
+    lines.push([
+      'M',
+      idMap.get(m.id)!.toString(),
+      esc(m.firstName),
+      esc(m.lastName || ''),
+      genderToCompact(m.gender),
+      m.isAlive ? '1' : '0',
+      m.birthDate || '',
+      m.deathDate || '',
+      esc(m.occupation || ''),
+      esc(m.birthPlace || ''),
+      esc(m.currentCity || ''),
+    ].join('|'));
+  }
+
+  // Relation lines (using numeric indices)
+  for (const r of params.relations) {
+    const fi = idMap.get(r.fromMemberId);
+    const ti = idMap.get(r.toMemberId);
+    if (fi === undefined || ti === undefined) continue;
+    lines.push([
+      'R',
+      fi.toString(),
+      ti.toString(),
+      r.type,
+      r.subtype || '',
+    ].join('|'));
+  }
+
+  // Step 3: Join, deflate-compress, base64url-encode
+  const raw = lines.join('\n');
+  const compressed = deflate(raw, { level: 9 });
+  const encoded = bytesToBase64url(compressed);
+
+  return V3_PREFIX + encoded;
+}
+
+function decodeV3(compressedBase64url: string): SharePayload | null {
+  try {
+    // Step 1: base64url-decode → inflate
+    const compressed = base64urlToBytes(compressedBase64url);
+    const raw = new TextDecoder().decode(inflate(compressed));
+
+    // Step 2: Parse pipe-delimited lines
+    const lines = raw.split('\n');
+    if (lines.length < 2) return null;
+
+    // Parse header
+    const hdr = lines[0].split('|');
+    if (hdr[0] !== '3') return null;
+
+    const mode: ShareMode = hdr[1] === 'e' ? 'invite_to_join' : 'view_only';
+    const name = unesc(hdr[2]);
+    const epochSeconds = parseInt(hdr[3], 36);
+    const ts = new Date(epochSeconds * 1000).toISOString();
+    const familyId = unesc(hdr[4]) || 'fam';
+    const syncTreeId = hdr[5] ? unesc(hdr[5]) : undefined;
+    const rootIdx = parseInt(hdr[6], 10);
+
+    // Parse members and relations
+    const members: FamilyMember[] = [];
+    const relations: StoredRelation[] = [];
+    const idxToId = new Map<number, string>();
+
+    for (let i = 1; i < lines.length; i++) {
+      const parts = lines[i].split('|');
+      if (parts[0] === 'M') {
+        const idx = parseInt(parts[1], 10);
+        // Generate a stable ID from index for imported members
+        const id = `imp_${idx}_${epochSeconds.toString(36)}`;
+        idxToId.set(idx, id);
+        members.push({
+          id,
+          firstName: unesc(parts[2]),
+          lastName: unesc(parts[3]),
+          gender: genderFromCompact(parts[4] as 'm' | 'f' | 'o'),
+          isAlive: parts[5] === '1',
+          familyId,
+          birthDate: parts[6] || undefined,
+          deathDate: parts[7] || undefined,
+          occupation: unesc(parts[8]) || undefined,
+          birthPlace: unesc(parts[9]) || undefined,
+          currentCity: unesc(parts[10]) || undefined,
+          memoryCount: 0,
+          kathaCount: 0,
+          hasVoiceSamples: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+      } else if (parts[0] === 'R') {
+        const fi = parseInt(parts[1], 10);
+        const ti = parseInt(parts[2], 10);
+        const fromId = idxToId.get(fi);
+        const toId = idxToId.get(ti);
+        if (!fromId || !toId) continue;
+        relations.push({
+          id: `rel_${fromId}_${toId}`,
+          fromMemberId: fromId,
+          toMemberId: toId,
+          type: parts[3] as BasicRelationType,
+          subtype: parts[4] || undefined,
+          createdAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    const rootId = idxToId.get(rootIdx);
+    if (!rootId || members.length === 0) return null;
+
+    return {
+      v: 3,
+      mode,
+      name,
+      ts,
+      syncTreeId,
+      data: { members, relations, rootMemberId: rootId },
+    };
+  } catch (e) {
+    console.warn('[ShareService] v3 decode failed:', e);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+// ENCODE — Tree → Share Code (v3 ultra-compact, fallback v2)
+// ═══════════════════════════════════════════════════════════
+
+/**
+ * Encode the family tree as a share code.
+ *
+ * Uses v3 ultra-compact format by default (deflate + pipe-delimited).
+ * Falls back to v2 if v3 somehow fails.
+ *
+ * v3 typical size: ~25 chars per member (vs ~95 in v2).
+ * Supports 15-20+ members in a QR code.
  */
 export function encodeTreeAsShareCode(params: {
   mode: ShareMode;
@@ -296,22 +530,29 @@ export function encodeTreeAsShareCode(params: {
   rootMemberId: string;
   syncTreeId?: string;
 }): string {
-  const compact: CompactPayload = {
-    v: 2,
-    m: params.mode === 'view_only' ? 'v' : 'e',
-    n: params.memberName,
-    t: Math.floor(Date.now() / 1000).toString(36),
-    ...(params.syncTreeId ? { s: params.syncTreeId } : {}),
-    d: {
-      M: params.members.map(compactMemberV2),
-      R: params.relations.map(compactRelationV2),
-      r: params.rootMemberId,
-    },
-  };
+  try {
+    // Try v3 first (much smaller)
+    return encodeV3(params);
+  } catch (e) {
+    console.warn('[ShareService] v3 encode failed, falling back to v2:', e);
+    // Fallback to v2
+    const compact: CompactPayload = {
+      v: 2,
+      m: params.mode === 'view_only' ? 'v' : 'e',
+      n: params.memberName,
+      t: Math.floor(Date.now() / 1000).toString(36),
+      ...(params.syncTreeId ? { s: params.syncTreeId } : {}),
+      d: {
+        M: params.members.map(compactMemberV2),
+        R: params.relations.map(compactRelationV2),
+        r: params.rootMemberId,
+      },
+    };
 
-  const json = JSON.stringify(compact);
-  const encoded = toBase64url(json);
-  return V2_PREFIX + encoded;
+    const json = JSON.stringify(compact);
+    const encoded = toBase64url(json);
+    return V2_PREFIX + encoded;
+  }
 }
 
 /**
@@ -319,8 +560,9 @@ export function encodeTreeAsShareCode(params: {
  * Helps decide whether to use code sharing or file sharing.
  */
 export function estimateShareCodeSize(memberCount: number, relationCount: number): number {
-  // Rough estimate: ~70 chars per member + ~25 per relation + overhead (v2 compact)
-  return Math.round((memberCount * 70 + relationCount * 25 + 50) * 1.37);
+  // v3 estimate: ~25 chars per member + ~10 per relation + overhead,
+  // then compressed ~40%, then base64 expansion ~1.37x
+  return Math.round((memberCount * 25 + relationCount * 10 + 50) * 0.4 * 1.37);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -335,14 +577,16 @@ export function estimateShareCodeSize(memberCount: number, relationCount: number
 function cleanShareCode(raw: string): string {
   let cleaned = raw.trim();
 
-  // Find the VANSH prefix (try v2 first, then v1)
+  // Find the VANSH prefix (try v3 first, then v2, then v1)
+  const v3Idx = cleaned.indexOf('VANSH:3:');
   const v2Idx = cleaned.indexOf('VANSH:2:');
   const v1Idx = cleaned.indexOf('VANSH:1:');
-  const prefixIdx = v2Idx !== -1 ? v2Idx : v1Idx;
+  const prefixIdx = v3Idx !== -1 ? v3Idx : v2Idx !== -1 ? v2Idx : v1Idx;
   if (prefixIdx === -1) return '';
 
-  const isV2 = v2Idx !== -1 && (v1Idx === -1 || v2Idx <= v1Idx);
-  const prefix = isV2 ? 'VANSH:2:' : 'VANSH:1:';
+  const version = v3Idx !== -1 && (v2Idx === -1 || v3Idx <= v2Idx) && (v1Idx === -1 || v3Idx <= v1Idx) ? 3
+    : v2Idx !== -1 && (v1Idx === -1 || v2Idx <= v1Idx) ? 2 : 1;
+  const prefix = `VANSH:${version}:`;
   const afterPrefix = cleaned.substring(prefixIdx + prefix.length);
 
   // ★ KEY FIX: Strip ALL whitespace, newlines, zero-width chars, quotes,
@@ -432,7 +676,14 @@ export function decodeShareCode(code: string): SharePayload | null {
     const cleaned = cleanShareCode(code);
     if (!cleaned) return null;
 
-    // Try v2 first
+    // Try v3 first (deflate-compressed)
+    if (cleaned.startsWith(V3_PREFIX)) {
+      const data = cleaned.substring(V3_PREFIX.length);
+      const result = decodeV3(data);
+      if (result) return result;
+    }
+
+    // Try v2
     if (cleaned.startsWith(V2_PREFIX)) {
       const data = cleaned.substring(V2_PREFIX.length);
       const result = decodeV2(data);
@@ -447,9 +698,9 @@ export function decodeShareCode(code: string): SharePayload | null {
       if (result) return result;
     }
 
-    // Last resort: try both decoders on raw data (in case prefix mismatch)
+    // Last resort: try all decoders on raw data (in case prefix mismatch)
     const rawData = cleaned.replace(/^VANSH:\d:/, '');
-    return decodeV2(rawData) || decodeV1(rawData);
+    return decodeV3(rawData) || decodeV2(rawData) || decodeV1(rawData);
   } catch (e) {
     console.warn('[ShareService] Failed to decode share code:', e);
     return null;
@@ -571,7 +822,7 @@ export async function shareTreeAsFile(params: {
 
     // Write to a temp JSON file using expo-file-system v19 API
     // Using require() to prevent auto-import-organizer from stripping the import
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+     
     const EFS = require('expo-file-system');
     const safeName = params.memberName.replace(/[^a-zA-Z0-9]/g, '_');
     const fileName = `${safeName}_family_tree.json`;

@@ -1,6 +1,6 @@
 /**
  * MORE HUB - Central access to all features
- * Traditions, Vault, Stories, Settings, and more
+ * Traditions, Vault, Invitations, Settings, and more
  */
 
 import { MaterialIcons } from '@expo/vector-icons';
@@ -18,19 +18,18 @@ import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MemberAvatar } from '../../src/components';
-import { API_URL } from '../../src/config/api';
-import { KathaPlayer, KathaRecorder } from '../../src/features/katha';
+import { InvitationCreator, InvitationDetail, InvitationsList } from '../../src/features/nimantran';
 import { TraditionCreator, TraditionDetail, TraditionsList } from '../../src/features/parampara';
 import { VasiyatCreator, VasiyatViewer, WisdomVault } from '../../src/features/vasiyat';
 import { useVrikshaStore } from '../../src/features/vriksha';
-import { useAuth, useKathas, useTraditions, useVasiyats } from '../../src/hooks';
-import { useAuthStore, useFamilyStore, useKathaStore } from '../../src/state';
+import { useAuth, useInvitations, useTraditions, useVasiyats } from '../../src/hooks';
+import { useAuthStore, useFamilyStore } from '../../src/state';
 import { VanshColors } from '../../src/theme';
-import type { Katha, Parampara, Vasiyat } from '../../src/types';
+import type { Nimantran, Parampara, Vasiyat } from '../../src/types';
 
 type ActiveView = 
   | 'hub' 
-  | 'katha_list' | 'katha_recorder' | 'katha_player'
+  | 'nimantran_list' | 'nimantran_creator' | 'nimantran_detail'
   | 'parampara_list' | 'parampara_detail' | 'parampara_create'
   | 'vasiyat_vault' | 'vasiyat_creator' | 'vasiyat_viewer'
   | 'settings';
@@ -84,58 +83,42 @@ export default function MoreHubScreen() {
   const { user, token } = useAuthStore();
   const { family, membersList, getMember } = useFamilyStore();
   const { members: treeMembers } = useVrikshaStore();
-  const { recentKathas } = useKathaStore();
 
   const [activeView, setActiveView] = useState<ActiveView>('hub');
-  const [selectedKatha, setSelectedKatha] = useState<Katha | null>(null);
   const [selectedTradition, setSelectedTradition] = useState<Parampara | null>(null);
   const [selectedVasiyat, setSelectedVasiyat] = useState<Vasiyat | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
+  const [selectedInvitation, setSelectedInvitation] = useState<Nimantran | null>(null);
 
   // Hooks for data
-  const { kathas, refresh: refreshKathas } = useKathas();
   const { traditions: apiTraditions, refresh: refreshTraditions } = useTraditions();
   const { vasiyats, receivedVasiyats, refresh: refreshVasiyats, createVasiyat } = useVasiyats();
+  const { invitations, refresh: refreshInvitations, createInvitation, deleteInvitation } = useInvitations();
 
-  const displayKathas = kathas.length > 0 ? kathas : recentKathas;
   const traditions = apiTraditions.length > 0 ? apiTraditions : mockTraditions;
   const allVasiyats = [...vasiyats, ...receivedVasiyats];
 
-  // ── Katha handlers ──
-  const handleRecordComplete = useCallback(async (audioUri: string, duration: number) => {
-    setIsUploading(true);
+  // ── Invitation handlers ──
+  const handleInvitationCreated = useCallback(async (invitationData: any) => {
     try {
-      const formData = new FormData();
-      formData.append('audio', {
-        uri: audioUri,
-        type: 'audio/m4a',
-        name: 'recording.m4a',
-      } as any);
-      formData.append('title', `Story - ${new Date().toLocaleDateString()}`);
-      formData.append('narratorId', user?.memberId || '');
-      formData.append('type', 'standalone_story');
-      formData.append('duration', String(duration));
-
-      const response = await fetch(`${API_URL}/kathas`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${token}` },
-        body: formData,
-      });
-      const data = await response.json();
-      if (data.success) {
-        Alert.alert('Success!', 'Your story has been saved.', [
-          { text: 'OK', onPress: () => { setActiveView('katha_list'); refreshKathas(); } }
-        ]);
-      } else {
-        throw new Error(data.error?.message || 'Upload failed');
-      }
+      await createInvitation(invitationData);
+      Alert.alert('Success!', 'Your invitation has been sent to the family.', [
+        { text: 'OK', onPress: () => { setActiveView('nimantran_list'); refreshInvitations(); } }
+      ]);
     } catch (error) {
-      Alert.alert('Upload Failed', 'Could not save your story. Please try again.');
-      setActiveView('katha_list');
-    } finally {
-      setIsUploading(false);
+      Alert.alert('Error', 'Could not create invitation. Please try again.');
+      setActiveView('nimantran_list');
     }
-  }, [token, user, refreshKathas]);
+  }, [createInvitation, refreshInvitations]);
+
+  const handleDeleteInvitation = useCallback((invitation: Nimantran) => {
+    Alert.alert('Delete Invitation', `Are you sure you want to delete "${invitation.title}"?`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        await deleteInvitation(invitation.id as string);
+        setActiveView('nimantran_list');
+      }},
+    ]);
+  }, [deleteInvitation]);
 
   const handleLogout = () => {
     Alert.alert('Sign Out', 'Are you sure you want to sign out?', [
@@ -149,14 +132,25 @@ export default function MoreHubScreen() {
 
   // ── SUB-VIEWS (full-screen feature views) ──
 
-  // Katha Recorder
-  if (activeView === 'katha_recorder') {
-    return <KathaRecorder onComplete={handleRecordComplete} onCancel={() => setActiveView('katha_list')} />;
+  // Nimantran Creator
+  if (activeView === 'nimantran_creator') {
+    return (
+      <InvitationCreator
+        onClose={() => setActiveView('nimantran_list')}
+        onCreated={handleInvitationCreated}
+      />
+    );
   }
 
-  // Katha Player
-  if (activeView === 'katha_player' && selectedKatha) {
-    return <KathaPlayer katha={selectedKatha} onClose={() => setActiveView('katha_list')} />;
+  // Nimantran Detail
+  if (activeView === 'nimantran_detail' && selectedInvitation) {
+    return (
+      <InvitationDetail
+        invitation={selectedInvitation}
+        onClose={() => setActiveView('nimantran_list')}
+        onDelete={() => handleDeleteInvitation(selectedInvitation)}
+      />
+    );
   }
 
   // Parampara Detail
@@ -170,7 +164,7 @@ export default function MoreHubScreen() {
           refreshTraditions();
         }}
         onAddMemory={() => {}}
-        onAddKatha={() => setActiveView('katha_recorder')}
+        onAddKatha={() => {}}
       />
     );
   }
@@ -214,53 +208,22 @@ export default function MoreHubScreen() {
     );
   }
 
-  // Katha List (sub-view within More)
-  if (activeView === 'katha_list') {
+  // Nimantran List (sub-view within More)
+  if (activeView === 'nimantran_list') {
     return (
       <View style={[styles.container, { paddingTop: insets.top }]}>
-        <SubViewHeader title="Voice Stories" onBack={() => setActiveView('hub')} />
+        <SubViewHeader title="Invitations" onBack={() => setActiveView('hub')} />
         <View style={styles.subHeaderActions}>
-          <Pressable style={styles.actionChip} onPress={() => setActiveView('katha_recorder')}>
-            <MaterialIcons name="mic" size={16} color="#FFF" />
-            <Text style={styles.actionChipText}>Record</Text>
+          <Pressable style={styles.actionChip} onPress={() => setActiveView('nimantran_creator')}>
+            <MaterialIcons name="add" size={16} color="#FFF" />
+            <Text style={styles.actionChipText}>New Invitation</Text>
           </Pressable>
         </View>
-        <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-          {displayKathas.length === 0 ? (
-            <EmptyFeatureState 
-              icon="mic" 
-              title="No Stories Yet" 
-              subtitle="Record your first family story"
-              actionLabel="Record a Story"
-              onAction={() => setActiveView('katha_recorder')}
-            />
-          ) : (
-            displayKathas.map((katha, i) => {
-              const narrator = getMember(katha.narratorId);
-              return (
-                <Animated.View key={katha.id} entering={FadeInDown.delay(i * 50).springify()}>
-                  <Pressable 
-                    style={styles.listCard}
-                    onPress={() => { setSelectedKatha(katha); setActiveView('katha_player'); }}
-                  >
-                    <View style={styles.listCardIcon}>
-                      <MaterialIcons name="mic" size={20} color={VanshColors.suvarna[600]} />
-                    </View>
-                    <View style={styles.listCardContent}>
-                      <Text style={styles.listCardTitle} numberOfLines={1}>
-                        {katha.transcript?.slice(0, 40) || 'Voice Story'}
-                      </Text>
-                      <Text style={styles.listCardSubtitle}>
-                        {narrator ? `${narrator.firstName} ${narrator.lastName}` : 'Family Member'} • {formatDuration(katha.duration)}
-                      </Text>
-                    </View>
-                    <MaterialIcons name="play-arrow" size={24} color={VanshColors.masi[400]} />
-                  </Pressable>
-                </Animated.View>
-              );
-            })
-          )}
-        </ScrollView>
+        <InvitationsList
+          invitations={invitations}
+          onInvitationPress={(inv: Nimantran) => { setSelectedInvitation(inv); setActiveView('nimantran_detail'); }}
+          onCreateNew={() => setActiveView('nimantran_creator')}
+        />
       </View>
     );
   }
@@ -353,12 +316,12 @@ export default function MoreHubScreen() {
         {/* Feature Grid */}
         <View style={styles.featureGrid}>
           <FeatureCard 
-            icon="mic" 
-            label="Voice Stories" 
-            subtitle="Record & listen"
-            color="#8B5CF6"
+            icon="mail-outline" 
+            label="Invitations" 
+            subtitle="Weddings, events & more"
+            color="#E11D48"
             delay={100}
-            onPress={() => setActiveView('katha_list')} 
+            onPress={() => setActiveView('nimantran_list')} 
           />
           <FeatureCard 
             icon="auto-stories" 
@@ -423,31 +386,6 @@ function FeatureCard({ icon, label, subtitle, color, delay, onPress }: {
       </Pressable>
     </Animated.View>
   );
-}
-
-function EmptyFeatureState({ icon, title, subtitle, actionLabel, onAction }: {
-  icon: keyof typeof MaterialIcons.glyphMap;
-  title: string;
-  subtitle: string;
-  actionLabel: string;
-  onAction: () => void;
-}) {
-  return (
-    <View style={styles.emptyState}>
-      <MaterialIcons name={icon} size={48} color={VanshColors.masi[300]} />
-      <Text style={styles.emptyTitle}>{title}</Text>
-      <Text style={styles.emptySubtitle}>{subtitle}</Text>
-      <Pressable style={styles.emptyAction} onPress={onAction}>
-        <Text style={styles.emptyActionText}>{actionLabel}</Text>
-      </Pressable>
-    </View>
-  );
-}
-
-function formatDuration(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
 // ─── Styles ──────────────────────────────────────
@@ -562,48 +500,6 @@ const styles = StyleSheet.create({
     color: '#FFF',
   },
 
-  // List cards
-  listContent: {
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 100,
-  },
-  listCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 8,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  listCardIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: VanshColors.suvarna[50],
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  listCardContent: {
-    flex: 1,
-  },
-  listCardTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: VanshColors.masi[800],
-  },
-  listCardSubtitle: {
-    fontSize: 12,
-    color: VanshColors.masi[400],
-    marginTop: 2,
-  },
-
   // Settings
   settingsContent: {
     padding: 20,
@@ -712,37 +608,5 @@ const styles = StyleSheet.create({
     color: VanshColors.masi[300],
     textAlign: 'center',
     marginTop: 24,
-  },
-
-  // Empty state
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 40,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: VanshColors.masi[700],
-    marginTop: 16,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    color: VanshColors.masi[400],
-    textAlign: 'center',
-    marginTop: 6,
-  },
-  emptyAction: {
-    marginTop: 20,
-    backgroundColor: VanshColors.suvarna[500],
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 24,
-  },
-  emptyActionText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#FFF',
   },
 });

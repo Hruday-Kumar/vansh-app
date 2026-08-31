@@ -4,6 +4,7 @@
 
 // Core Pillars
 export * from './katha';
+export * from './nimantran';
 export * from './parampara';
 export * from './smriti';
 export * from './vasiyat';

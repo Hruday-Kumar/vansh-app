@@ -13,6 +13,10 @@ const controller = new VasiyatController();
 // All routes require authentication
 router.use(authenticate);
 
+// Fixed-path routes MUST come before parameterized routes
+// (Express matches in registration order — /:vasiyatId would capture 'check' as an ID)
+router.get('/check/pending', controller.checkPendingUnlocks);
+
 // Vasiyat CRUD
 router.get('/', controller.getVasiyats);
 router.get('/:vasiyatId', controller.getVasiyat);
@@ -28,9 +32,6 @@ router.delete('/:vasiyatId/recipients/:memberId', controller.removeRecipient);
 // Unlock
 router.post('/:vasiyatId/unlock', controller.unlockVasiyat);
 router.post('/:vasiyatId/request-unlock', controller.requestUnlock);
-
-// Check pending (for scheduled unlocks)
-router.get('/check/pending', controller.checkPendingUnlocks);
 
 // View tracking
 router.post('/:vasiyatId/view', controller.recordView);

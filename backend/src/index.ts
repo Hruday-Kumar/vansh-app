@@ -17,6 +17,7 @@ import path from 'path';
 import { closePool, testConnection } from './config/database';
 import { errorHandler, requestLogger } from './middleware/index';
 import authRoutes from './routes/auth.routes';
+import eventRoutes from './routes/event.routes';
 import familyRoutes from './routes/family.routes';
 import kathaRoutes from './routes/katha.routes';
 import memberRoutes from './routes/member.routes';
@@ -139,6 +140,7 @@ app.use('/api/members', memberRoutes);
 app.use('/api/memories', memoryRoutes);
 app.use('/api/kathas', kathaRoutes);
 app.use('/api/vasiyats', vasiyatRoutes);
+app.use('/api/events', eventRoutes);
 
 // Debug endpoint for token testing
 app.get('/api/debug/token', (req, res) => {

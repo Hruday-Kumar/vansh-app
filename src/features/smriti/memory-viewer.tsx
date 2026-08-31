@@ -16,6 +16,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
     FadeIn,
     FadeOut,
+    runOnJS,
     SlideInDown,
     SlideOutDown,
     useAnimatedStyle,
@@ -27,6 +28,7 @@ import { HeritageCard, MemberAvatar, SacredText, SilkButton, VoiceWaveform } fro
 import { useFamilyStore, useKathaStore } from '../../state';
 import { VanshColors, VanshRadius, VanshShadows, VanshSpacing, VanshSpring } from '../../theme';
 import type { Katha, SmritiMedia } from '../../types';
+import { VideoPlayer } from './video-player';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -56,14 +58,14 @@ export function MemoryViewer({ memory, onClose, onPlayKatha }: MemoryViewerProps
       if (scale.value < 1) {
         scale.value = withSpring(1, VanshSpring.gentle);
         savedScale.value = 1;
-        setIsZoomed(false);
+        runOnJS(setIsZoomed)(false);
       } else if (scale.value > 3) {
         scale.value = withSpring(3, VanshSpring.gentle);
         savedScale.value = 3;
-        setIsZoomed(true);
+        runOnJS(setIsZoomed)(true);
       } else {
         savedScale.value = scale.value;
-        setIsZoomed(scale.value > 1.2);
+        runOnJS(setIsZoomed)(scale.value > 1.2);
       }
     });
   
@@ -89,20 +91,31 @@ export function MemoryViewer({ memory, onClose, onPlayKatha }: MemoryViewerProps
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="light-content" />
       
-      {/* Main Image */}
-      <GestureDetector gesture={pinchGesture}>
-        <Pressable onPress={toggleDetails} style={styles.imageContainer}>
-          <Animated.View style={imageStyle}>
-            <Image
-              source={{ uri: memory.uri }}
-              style={styles.image}
-              contentFit="contain"
-              placeholder={memory.blurhash}
-              transition={300}
-            />
-          </Animated.View>
-        </Pressable>
-      </GestureDetector>
+      {/* Main Media */}
+      {memory.type === 'video' ? (
+        <View style={styles.imageContainer}>
+          <VideoPlayer
+            uri={memory.uri}
+            posterUri={memory.thumbnailUri}
+            mode="fullscreen"
+            autoPlay
+          />
+        </View>
+      ) : (
+        <GestureDetector gesture={pinchGesture}>
+          <Pressable onPress={toggleDetails} style={styles.imageContainer}>
+            <Animated.View style={imageStyle}>
+              <Image
+                source={{ uri: memory.uri }}
+                style={styles.image}
+                contentFit="contain"
+                placeholder={memory.blurhash}
+                transition={300}
+              />
+            </Animated.View>
+          </Pressable>
+        </GestureDetector>
+      )}
       
       {/* Header */}
       {!isZoomed && (

@@ -13,6 +13,10 @@ const controller = new MemberController();
 // All routes require authentication
 router.use(authenticate);
 
+// Fixed-path routes MUST come before parameterized routes
+// (Express matches in registration order — /:memberId would capture 'tree' as an ID)
+router.get('/tree/full', controller.getFamilyTree);
+
 // Member CRUD
 router.get('/', controller.getMembers);
 router.get('/:memberId', controller.getMember);
@@ -31,8 +35,5 @@ router.delete('/:memberId/relationships/:relationshipId', controller.removeRelat
 // Ancestry queries
 router.get('/:memberId/ancestors', controller.getAncestors);
 router.get('/:memberId/descendants', controller.getDescendants);
-
-// Family tree data
-router.get('/tree/full', controller.getFamilyTree);
 
 export default router;

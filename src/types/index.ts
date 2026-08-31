@@ -12,16 +12,3 @@ export * from './database';
 // API request/response types
 export * from './api';
 
-// Re-export commonly used types for convenience
-export type {
-    DigitalEcho,
-
-    // Supporting types
-    Era, FamilyId, GeoLocation, Katha, KathaId, MemberId,
-    MemoryId, Parampara, PranaConnection, Relationship,
-    // Core entities
-    SmritiMedia, TimeRiverItem,
-    // IDs
-    VanshId, Vasiyat, VasiyatId, VrikshaMember, WisdomFragment
-} from './core';
-

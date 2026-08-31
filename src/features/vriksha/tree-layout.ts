@@ -26,12 +26,12 @@ import type { Connector, FamilyNode, LayoutNode, PersonData, TreeLayout } from '
 // CONSTANTS — must match animated-member-node.tsx!
 // ═══════════════════════════════════════════════════════════
 
-export const NODE_WIDTH = 120;
-export const NODE_HEIGHT = 150;
-export const SPOUSE_GAP = 40;
-export const SIBLING_GAP = 50;
-export const GENERATION_GAP = 120;
-export const SUBTREE_GAP = 40;
+export const NODE_WIDTH = 130;
+export const NODE_HEIGHT = 160;
+export const SPOUSE_GAP = 36;
+export const SIBLING_GAP = 44;
+export const GENERATION_GAP = 100;
+export const SUBTREE_GAP = 36;
 
 // ═══════════════════════════════════════════════════════════
 // INTERNAL TYPES
@@ -42,6 +42,9 @@ interface FamilyUnit {
   members: FamilyNode[];
   children: string[];
   subtreeWidth: number;
+  leftBound: number;
+  rightBound: number;
+  childOffsets: Map<string, number>;
   x: number;
   y: number;
 }
@@ -67,8 +70,12 @@ export function calculateTreeLayout(
   const generations = calculateGenerations(nodes, nodeMap, rootId);
   const { familyUnits, nodeToUnit } = createFamilyUnits(nodes, nodeMap, generations);
   const childrenByUnit = buildUnitGraph(familyUnits, nodeToUnit, generations);
-  calculateSubtreeWidths(familyUnits, childrenByUnit);
-  const positions = assignPositions(familyUnits, childrenByUnit, generations, rootId, nodeToUnit);
+
+  const rootUnitId = nodeToUnit.get(rootId);
+  const spine = getSpinePath(rootUnitId, childrenByUnit);
+
+  calculateSubtreeBounds(familyUnits, childrenByUnit, spine);
+  const positions = assignPositionsEgoCentric(familyUnits, childrenByUnit, generations, rootId, nodeToUnit);
   const layoutNodes = createLayoutNodes(nodes, positions, generations, personData, rootId);
   const connectors = createConnectors(layoutNodes, familyUnits, nodeToUnit);
   const bounds = calculateBounds(layoutNodes);
@@ -205,6 +212,9 @@ function createFamilyUnits(
       members,
       children: Array.from(childrenSet),
       subtreeWidth: 0,
+      leftBound: 0,
+      rightBound: 0,
+      childOffsets: new Map<string, number>(),
       x: 0,
       y: (generations.get(node.id) ?? 0) * (NODE_HEIGHT + GENERATION_GAP),
     };
@@ -248,52 +258,112 @@ function buildUnitGraph(
 // STEP 4: CALCULATE SUBTREE WIDTHS (Bottom-Up)
 // ═══════════════════════════════════════════════════════════
 
-function calculateSubtreeWidths(
-  familyUnits: Map<string, FamilyUnit>,
-  childrenByUnit: Map<string, string[]>
-): void {
-  const calculated = new Set<string>();
-  const visiting = new Set<string>();
+function getSpinePath(rootUnitId: string | undefined, childrenByUnit: Map<string, string[]>): Set<string> {
+  const spine = new Set<string>();
+  if (!rootUnitId) return spine;
+  
+  const parentsByUnit = new Map<string, string[]>();
+  childrenByUnit.forEach((children, parentId) => {
+    children.forEach(childId => {
+      if (!parentsByUnit.has(childId)) parentsByUnit.set(childId, []);
+      parentsByUnit.get(childId)!.push(parentId);
+    });
+  });
 
-  function calcWidth(unitId: string): number {
-    if (calculated.has(unitId)) return familyUnits.get(unitId)?.subtreeWidth || 0;
-    if (visiting.has(unitId)) {
-      const unit = familyUnits.get(unitId);
-      return unit ? unit.members.length * NODE_WIDTH + (unit.members.length - 1) * SPOUSE_GAP : NODE_WIDTH;
-    }
-
-    const unit = familyUnits.get(unitId);
-    if (!unit) return 0;
-
-    visiting.add(unitId);
-
-    const ownWidth = unit.members.length * NODE_WIDTH + (unit.members.length - 1) * SPOUSE_GAP;
-    const childUnitIds = childrenByUnit.get(unitId) || [];
-
-    if (childUnitIds.length === 0) {
-      unit.subtreeWidth = ownWidth;
+  let current: string | undefined = rootUnitId;
+  while (current) {
+    spine.add(current);
+    const parents = parentsByUnit.get(current);
+    if (parents && parents.length > 0) {
+      current = parents[0];
     } else {
-      let childrenTotalWidth = 0;
-      childUnitIds.forEach((childUnitId, index) => {
-        childrenTotalWidth += calcWidth(childUnitId);
-        if (index < childUnitIds.length - 1) childrenTotalWidth += SIBLING_GAP;
-      });
-      unit.subtreeWidth = Math.max(ownWidth, childrenTotalWidth);
+      break;
     }
-
-    visiting.delete(unitId);
-    calculated.add(unitId);
-    return unit.subtreeWidth;
   }
-
-  familyUnits.forEach((_, unitId) => calcWidth(unitId));
+  return spine;
 }
 
-// ═══════════════════════════════════════════════════════════
-// STEP 5: ASSIGN POSITIONS (Top-Down)
-// ═══════════════════════════════════════════════════════════
+function calculateSubtreeBounds(
+  familyUnits: Map<string, FamilyUnit>,
+  childrenByUnit: Map<string, string[]>,
+  spine: Set<string>
+): void {
+  const calculated = new Set<string>();
 
-function assignPositions(
+  function calcBounds(unitId: string): void {
+    if (calculated.has(unitId)) return;
+    const unit = familyUnits.get(unitId);
+    if (!unit) return;
+
+    const childUnitIds = childrenByUnit.get(unitId) || [];
+    childUnitIds.forEach(id => calcBounds(id));
+
+    const ownWidth = unit.members.length * NODE_WIDTH + (unit.members.length - 1) * SPOUSE_GAP;
+    const ownLeft = ownWidth / 2;
+    const ownRight = ownWidth / 2;
+
+    if (childUnitIds.length === 0) {
+      unit.leftBound = ownLeft;
+      unit.rightBound = ownRight;
+      unit.subtreeWidth = ownLeft + ownRight;
+      calculated.add(unitId);
+      return;
+    }
+
+    const spineChildIdx = childUnitIds.findIndex(cid => spine.has(cid));
+
+    if (spineChildIdx >= 0) {
+      unit.childOffsets.set(childUnitIds[spineChildIdx], 0);
+
+      let currentOffsetX = -familyUnits.get(childUnitIds[spineChildIdx])!.leftBound - SIBLING_GAP;
+      for (let i = spineChildIdx - 1; i >= 0; i--) {
+        const cUnit = familyUnits.get(childUnitIds[i])!;
+        const offset = currentOffsetX - cUnit.rightBound;
+        unit.childOffsets.set(cUnit.id, offset);
+        currentOffsetX = offset - cUnit.leftBound - SIBLING_GAP;
+      }
+      const maxLeftChild = currentOffsetX > 0 ? 0 : -currentOffsetX - SIBLING_GAP;
+
+      currentOffsetX = familyUnits.get(childUnitIds[spineChildIdx])!.rightBound + SIBLING_GAP;
+      for (let i = spineChildIdx + 1; i < childUnitIds.length; i++) {
+        const cUnit = familyUnits.get(childUnitIds[i])!;
+        const offset = currentOffsetX + cUnit.leftBound;
+        unit.childOffsets.set(cUnit.id, offset);
+        currentOffsetX = offset + cUnit.rightBound + SIBLING_GAP;
+      }
+      const maxRightChild = currentOffsetX - SIBLING_GAP;
+
+      unit.leftBound = Math.max(ownLeft, maxLeftChild);
+      unit.rightBound = Math.max(ownRight, maxRightChild);
+
+    } else {
+      let totalChildrenWidth = 0;
+      childUnitIds.forEach((cid, index) => {
+        const cUnit = familyUnits.get(cid)!;
+        totalChildrenWidth += cUnit.leftBound + cUnit.rightBound;
+        if (index < childUnitIds.length - 1) totalChildrenWidth += SIBLING_GAP;
+      });
+
+      let currentOffsetX = -totalChildrenWidth / 2;
+      childUnitIds.forEach(cid => {
+        const cUnit = familyUnits.get(cid)!;
+        const offset = currentOffsetX + cUnit.leftBound;
+        unit.childOffsets.set(cid, offset);
+        currentOffsetX = offset + cUnit.rightBound + SIBLING_GAP;
+      });
+
+      unit.leftBound = Math.max(ownLeft, totalChildrenWidth / 2);
+      unit.rightBound = Math.max(ownRight, totalChildrenWidth / 2);
+    }
+
+    unit.subtreeWidth = unit.leftBound + unit.rightBound;
+    calculated.add(unitId);
+  }
+
+  familyUnits.forEach((_, unitId) => calcBounds(unitId));
+}
+
+function assignPositionsEgoCentric(
   familyUnits: Map<string, FamilyUnit>,
   childrenByUnit: Map<string, string[]>,
   generations: Map<string, number>,
@@ -307,92 +377,66 @@ function assignPositions(
   if (!rootUnitId) return fallbackPositioning(familyUnits, generations);
 
   const allRootUnits = findRootUnits(familyUnits, childrenByUnit);
+  const primaryRoots = allRootUnits.filter(r => canReachUnit(r, rootUnitId, childrenByUnit));
+  const secondaryRoots = allRootUnits.filter(r => !primaryRoots.includes(r));
 
-  // Separate primary roots (ancestor lineage of the root member) from secondary
-  // roots (in-law lineages). Primary roots are positioned first; secondary roots
-  // are placed near their already-positioned children rather than far away.
-  const primaryRoots: string[] = [];
-  const secondaryRoots: string[] = [];
-
-  for (const unitId of allRootUnits) {
-    if (canReachUnit(unitId, rootUnitId, childrenByUnit)) {
-      primaryRoots.push(unitId);
-    } else {
-      secondaryRoots.push(unitId);
-    }
-  }
-
-  // If no primary root found (root member itself is in a root unit), use it
   if (primaryRoots.length === 0) {
-    const idx = allRootUnits.indexOf(rootUnitId);
-    if (idx >= 0) {
+    if (allRootUnits.includes(rootUnitId)) {
       primaryRoots.push(rootUnitId);
-      secondaryRoots.splice(secondaryRoots.indexOf(rootUnitId), 1);
+      const idx = secondaryRoots.indexOf(rootUnitId);
+      if (idx > -1) secondaryRoots.splice(idx, 1);
     } else {
-      // Fallback: just use all roots as primary
       primaryRoots.push(...allRootUnits);
       secondaryRoots.length = 0;
     }
   }
 
-  // Position primary lineage roots
   let currentX = 0;
   primaryRoots.forEach(unitId => {
-    const unit = familyUnits.get(unitId);
-    if (!unit) return;
-    unit.x = currentX + unit.subtreeWidth / 2;
+    const unit = familyUnits.get(unitId)!;
+    unit.x = currentX + unit.leftBound;
     unitPositioned.add(unitId);
-    positionChildren(unitId, unit.x, familyUnits, childrenByUnit, unitPositioned);
-    currentX += unit.subtreeWidth + SUBTREE_GAP;
+    positionChildrenUsingOffsets(unitId, familyUnits, childrenByUnit, unitPositioned);
+    currentX += unit.leftBound + unit.rightBound + SUBTREE_GAP;
   });
 
-  // Position secondary roots (in-law parents) near their positioned children
   secondaryRoots.forEach(unitId => {
-    const unit = familyUnits.get(unitId);
-    if (!unit) return;
-
+    const unit = familyUnits.get(unitId)!;
     const childUnitIds = childrenByUnit.get(unitId) || [];
     const positionedChildId = childUnitIds.find(cid => unitPositioned.has(cid));
 
     if (positionedChildId) {
-      const childUnit = familyUnits.get(positionedChildId);
-      if (childUnit) {
-        // Position this unit directly above and to the side of its child
-        // Find the rightmost x of already-positioned units at the same generation
-        const unitGen = unit.members[0] ? (generations.get(unit.members[0].id) ?? 0) : 0;
-        let maxXAtGen = -Infinity;
-        familyUnits.forEach(u => {
-          if (!unitPositioned.has(u.id)) return;
-          const uGen = u.members[0] ? (generations.get(u.members[0].id) ?? 0) : 0;
-          if (uGen === unitGen) {
-            const uRight = u.x + (u.members.length * NODE_WIDTH + (u.members.length - 1) * SPOUSE_GAP) / 2;
-            maxXAtGen = Math.max(maxXAtGen, uRight);
-          }
-        });
-
-        // Place to the right of existing units at same generation, or near child
-        const ownWidth = unit.members.length * NODE_WIDTH + (unit.members.length - 1) * SPOUSE_GAP;
-        if (maxXAtGen > -Infinity) {
-          unit.x = maxXAtGen + SUBTREE_GAP + ownWidth / 2;
-        } else {
-          unit.x = childUnit.x + SUBTREE_GAP + ownWidth / 2;
+      const childUnit = familyUnits.get(positionedChildId)!;
+      const unitGen = unit.members[0] ? (generations.get(unit.members[0].id) ?? 0) : 0;
+      let maxXAtGen = -Infinity;
+      familyUnits.forEach(u => {
+        if (!unitPositioned.has(u.id)) return;
+        const uGen = u.members[0] ? (generations.get(u.members[0].id) ?? 0) : 0;
+        if (uGen === unitGen) {
+          maxXAtGen = Math.max(maxXAtGen, u.x + u.rightBound);
         }
+      });
 
-        unitPositioned.add(unitId);
-        // Position any un-positioned children of this secondary root
-        positionChildren(unitId, unit.x, familyUnits, childrenByUnit, unitPositioned);
+      if (maxXAtGen > -Infinity) {
+        unit.x = maxXAtGen + SUBTREE_GAP + unit.leftBound;
+      } else {
+        unit.x = childUnit.x + SUBTREE_GAP + unit.leftBound;
       }
     } else {
-      // Truly disconnected unit — position after everything else
-      unit.x = currentX + unit.subtreeWidth / 2;
-      unitPositioned.add(unitId);
-      positionChildren(unitId, unit.x, familyUnits, childrenByUnit, unitPositioned);
-      currentX += unit.subtreeWidth + SUBTREE_GAP;
+      unit.x = currentX + unit.leftBound;
+      currentX += unit.leftBound + unit.rightBound + SUBTREE_GAP;
     }
+    unitPositioned.add(unitId);
+    positionChildrenUsingOffsets(unitId, familyUnits, childrenByUnit, unitPositioned);
   });
 
-  // Convert unit center X to individual node positions
+  const targetRootUnit = familyUnits.get(rootUnitId);
+  const shiftX = targetRootUnit ? targetRootUnit.x : 0;
+
   familyUnits.forEach(unit => {
+    unit.x -= shiftX;
+    
+    // Convert unit center X to individual node positions
     const totalMemberWidth = unit.members.length * NODE_WIDTH + (unit.members.length - 1) * SPOUSE_GAP;
     const startX = unit.x - totalMemberWidth / 2;
     unit.members.forEach((member, index) => {
@@ -406,7 +450,6 @@ function assignPositions(
   return positions;
 }
 
-/** BFS check: can we reach targetUnitId from startUnitId via childrenByUnit? */
 function canReachUnit(
   startUnitId: string,
   targetUnitId: string,
@@ -439,38 +482,25 @@ function findRootUnits(
   return rootUnits;
 }
 
-function positionChildren(
+function positionChildrenUsingOffsets(
   parentUnitId: string,
-  parentCenterX: number,
   familyUnits: Map<string, FamilyUnit>,
   childrenByUnit: Map<string, string[]>,
   unitPositioned: Set<string>
 ): void {
+  const parentUnit = familyUnits.get(parentUnitId);
+  if (!parentUnit) return;
   const childUnitIds = childrenByUnit.get(parentUnitId) || [];
-  if (childUnitIds.length === 0) return;
-
-  // Calculate total width of all children subtrees
-  let totalChildWidth = 0;
-  childUnitIds.forEach((childUnitId, index) => {
-    const childUnit = familyUnits.get(childUnitId);
-    if (childUnit) {
-      totalChildWidth += childUnit.subtreeWidth;
-      if (index < childUnitIds.length - 1) totalChildWidth += SIBLING_GAP;
-    }
-  });
-
-  // Center children under parent — this works correctly for 1 or N children
-  let currentX = parentCenterX - totalChildWidth / 2;
 
   childUnitIds.forEach(childUnitId => {
     if (unitPositioned.has(childUnitId)) return;
     const childUnit = familyUnits.get(childUnitId);
     if (!childUnit) return;
 
-    childUnit.x = currentX + childUnit.subtreeWidth / 2;
+    const offset = parentUnit.childOffsets.get(childUnitId) ?? 0;
+    childUnit.x = parentUnit.x + offset;
     unitPositioned.add(childUnitId);
-    positionChildren(childUnitId, childUnit.x, familyUnits, childrenByUnit, unitPositioned);
-    currentX += childUnit.subtreeWidth + SIBLING_GAP;
+    positionChildrenUsingOffsets(childUnitId, familyUnits, childrenByUnit, unitPositioned);
   });
 }
 

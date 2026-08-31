@@ -4,7 +4,7 @@
 
 import { Audio, AVPlaybackStatus } from 'expo-av';
 import { Image } from 'expo-image';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Dimensions,
     FlatList,
@@ -34,9 +34,10 @@ export function KathaPlayer({ katha, onClose }: KathaPlayerProps) {
   const { getMember } = useFamilyStore();
   const { memories } = useMemoryStore();
   
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [position, setPosition] = useState(0); // 0-1
+  const currentSyncIndexRef = useRef(0);
   const [currentSyncIndex, setCurrentSyncIndex] = useState(0);
   
   const flatListRef = useRef<FlatList>(null);
@@ -55,31 +56,41 @@ export function KathaPlayer({ katha, onClose }: KathaPlayerProps) {
   
   // Initialize audio
   useEffect(() => {
+    // Skip audio loading for demo kathas with no audio file
+    if (!katha.audioUri) return;
+    
+    let mounted = true;
+    const loadAudio = async () => {
+      try {
+        const { sound: newSound } = await Audio.Sound.createAsync(
+          { uri: katha.audioUri },
+          { shouldPlay: false },
+        );
+        if (!mounted) {
+          await newSound.unloadAsync();
+          return;
+        }
+        newSound.setOnPlaybackStatusUpdate(onPlaybackStatusUpdate);
+        soundRef.current = newSound;
+      } catch (error) {
+        console.error('Failed to load audio:', error);
+      }
+    };
     loadAudio();
     return () => {
-      if (sound) {
-        sound.unloadAsync();
+      mounted = false;
+      if (soundRef.current) {
+        soundRef.current.unloadAsync();
+        soundRef.current = null;
       }
     };
   }, [katha.audioUri]);
   
-  const loadAudio = async () => {
-    try {
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: katha.audioUri },
-        { shouldPlay: false },
-        onPlaybackStatusUpdate
-      );
-      setSound(newSound);
-    } catch (error) {
-      console.error('Failed to load audio:', error);
-    }
-  };
-  
-  const onPlaybackStatusUpdate = (status: AVPlaybackStatus) => {
+  const onPlaybackStatusUpdate = useCallback((status: AVPlaybackStatus) => {
     if (!status.isLoaded) return;
     
-    const newPosition = status.positionMillis / (katha.duration * 1000);
+    const durationMs = katha.duration * 1000;
+    const newPosition = durationMs > 0 ? status.positionMillis / durationMs : 0;
     setPosition(newPosition);
     setIsPlaying(status.isPlaying);
     
@@ -93,12 +104,13 @@ export function KathaPlayer({ katha, onClose }: KathaPlayerProps) {
         }
       );
       
-      if (syncIndex !== -1 && syncIndex !== currentSyncIndex) {
+      if (syncIndex !== -1 && syncIndex !== currentSyncIndexRef.current) {
+        currentSyncIndexRef.current = syncIndex;
         setCurrentSyncIndex(syncIndex);
         handleSyncPoint(katha.syncPoints[syncIndex]);
       }
     }
-  };
+  }, [katha.duration, katha.syncPoints]);
   
   const handleSyncPoint = (syncPoint: VoiceSyncPoint) => {
     // Animate photo transition
@@ -123,21 +135,28 @@ export function KathaPlayer({ katha, onClose }: KathaPlayerProps) {
     }
   };
   
-  const handlePlayPause = async () => {
-    if (!sound) return;
-    
-    if (isPlaying) {
-      await sound.pauseAsync();
-    } else {
-      await sound.playAsync();
+  const handlePlayPause = useCallback(async () => {
+    if (!soundRef.current) return;
+    try {
+      if (isPlaying) {
+        await soundRef.current.pauseAsync();
+      } else {
+        await soundRef.current.playAsync();
+      }
+    } catch (error) {
+      console.error('Playback error:', error);
     }
-  };
+  }, [isPlaying]);
   
-  const handleSeek = async (newPosition: number) => {
-    if (!sound) return;
-    const positionMillis = newPosition * katha.duration * 1000;
-    await sound.setPositionAsync(positionMillis);
-  };
+  const handleSeek = useCallback(async (newPosition: number) => {
+    if (!soundRef.current) return;
+    try {
+      const positionMillis = newPosition * katha.duration * 1000;
+      await soundRef.current.setPositionAsync(positionMillis);
+    } catch (error) {
+      console.error('Seek error:', error);
+    }
+  }, [katha.duration]);
   
   const photoStyle = useAnimatedStyle(() => ({
     opacity: photoOpacity.value,
@@ -212,7 +231,7 @@ export function KathaPlayer({ katha, onClose }: KathaPlayerProps) {
       {katha.transcript ? (
         <View style={styles.transcriptContainer}>
           <SacredText variant="quote" color="secondary" align="center" numberOfLines={3}>
-            "{katha.transcript.slice(0, 150)}..."
+            &ldquo;{katha.transcript.slice(0, 150)}...&rdquo;
           </SacredText>
         </View>
       ) : null}
