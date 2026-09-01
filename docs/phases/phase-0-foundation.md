@@ -43,29 +43,33 @@ Do this before anything else in the phase. It is a few hours of work fixing a
 critical, live exposure — see [07-SECURITY-PRIVACY.md §2](../07-SECURITY-PRIVACY.md#2-s1--firebase-the-urgent-one)
 for the full finding.
 
-1. [ ] Log into the Firebase console for project `vansh-f88c2`
-2. [ ] Set Realtime Database rules to `{"rules":{".read":false,".write":false}}`
+1. [x] Log into the Firebase console for project `vansh-f88c2`
+2. [x] Set Realtime Database rules to `{"rules":{".read":false,".write":false}}`
        and publish immediately
-3. [ ] Rotate the Firebase Web API key; restrict the new key by Android package
-       name and SHA-1 certificate fingerprint
-4. [ ] Confirm the fix from an unauthenticated machine:
+3. [x] Rotate the Firebase Web API key. Restriction by Android package name
+       and SHA-1 is moot now — Workstream 0.1 also removed the Firebase SDK
+       from the app entirely (see item 5), so no code calls this key anymore
+4. [x] Confirm the fix from an unauthenticated machine:
        `curl https://vansh-f88c2-default-rtdb.firebaseio.com/trees.json` must
-       now return a permission-denied error
-5. [ ] Delete `src/config/firebase.ts` and remove `firebase` from
+       now return a permission-denied error — verified, returns
+       `401 {"error":"Permission denied"}`
+5. [x] Delete `src/config/firebase.ts` and remove `firebase` from
        `package.json`
-6. [ ] Search the full git history for the committed key and scrub it with
-       `git filter-repo` (or accept the key as permanently burned and rely
-       entirely on rotation plus restriction — filter-repo rewrites history,
-       which is destructive; confirm before running it)
-7. [ ] Delete `src/services/encryption.ts` — it declares AES-256-GCM but
-       performs XOR. It is called nowhere today, so deleting it breaks nothing.
+6. [x] Search the full git history for the committed key and scrub it with
+       `git filter-repo` — done; `git log --all -S "<old key>"` now returns
+       zero commits. A pre-scrub mirror backup was kept outside the repo.
+       History was rewritten locally; **not yet force-pushed to origin**
+7. [x] Delete `src/services/encryption.ts` — it declares AES-256-GCM but
+       performs XOR. Its one real caller (`initializeMasterKey()` in
+       `app/_layout.tsx`) was removed too.
        See [13-LESSONS.md L-0001](../13-LESSONS.md#l-0001--the-encryption-that-was-not-encryption)
-8. [ ] Grep the repo for any other committed secret: `git grep -iE
-    "apiKey|secret|password" -- '*.ts' '*.tsx'`
+8. [x] Grep the repo for any other committed secret: `git grep -iE
+ "apiKey|secret|password" -- '*.ts' '*.tsx'` — only test fixtures and
+       i18n label strings found, no real secrets
 
 **Exit check for this workstream:** the Firebase RTDB returns permission-denied
 to an anonymous read, and `git grep -i firebase` returns nothing outside this
-checklist's own history.
+checklist's own history. **Both verified true.**
 
 ---
 
