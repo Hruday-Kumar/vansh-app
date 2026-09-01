@@ -77,7 +77,7 @@ export {
     resolveRelationship
 } from './relationship-resolver';
 
-// Tree Sync (Firebase Realtime Database)
+// Tree Sync (disabled — see tree-sync-service.ts)
 export {
     disconnectSync,
     getSyncInfo,

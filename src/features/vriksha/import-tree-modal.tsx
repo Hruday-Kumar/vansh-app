@@ -30,7 +30,7 @@ import {
 import Animated, { FadeIn, FadeInDown, SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { isFirebaseConfigured } from './tree-sync-service';
+import { isTreeSyncConfigured } from './tree-sync-service';
 import { VanshColors, VanshRadius } from '../../theme';
 import {
   decodeShareCode,
@@ -219,7 +219,7 @@ export function ImportTreeModal({ visible, onClose, onImported }: ImportTreeModa
       saveImportedTree(decodedPayload);
 
       // Auto-join sync if the shared tree has a syncTreeId
-      if (decodedPayload.syncTreeId && isFirebaseConfigured) {
+      if (decodedPayload.syncTreeId && isTreeSyncConfigured) {
         try {
           const { joinSync } = useVrikshaStore.getState();
           await joinSync(decodedPayload.syncTreeId, selectedIdentityId);
@@ -232,7 +232,7 @@ export function ImportTreeModal({ visible, onClose, onImported }: ImportTreeModa
       const selectedMember = decodedPayload.data.members.find(m => m.id === selectedIdentityId);
       const name = selectedMember ? `${selectedMember.firstName} ${selectedMember.lastName}` : 'you';
 
-      const syncNote = decodedPayload.syncTreeId && isFirebaseConfigured
+      const syncNote = decodedPayload.syncTreeId && isTreeSyncConfigured
         ? '\n\n🔄 This tree is synced — changes will update across all devices automatically!'
         : '';
 
@@ -297,7 +297,7 @@ export function ImportTreeModal({ visible, onClose, onImported }: ImportTreeModa
       setRootMember(newId);
 
       // Auto-join sync if the shared tree has a syncTreeId
-      if (decodedPayload.syncTreeId && isFirebaseConfigured) {
+      if (decodedPayload.syncTreeId && isTreeSyncConfigured) {
         try {
           const { joinSync } = useVrikshaStore.getState();
           await joinSync(decodedPayload.syncTreeId, newId);
@@ -307,7 +307,7 @@ export function ImportTreeModal({ visible, onClose, onImported }: ImportTreeModa
         }
       }
 
-      const syncNote = decodedPayload.syncTreeId && isFirebaseConfigured
+      const syncNote = decodedPayload.syncTreeId && isTreeSyncConfigured
         ? '\n\n🔄 This tree is synced — updates will appear automatically!'
         : '';
 

@@ -91,7 +91,7 @@ export interface VrikshaState {
   addRelation: (fromId: string, toId: string, type: BasicRelationType, subtype?: string) => void;
   removeRelation: (fromId: string, toId: string) => void;
   getDirectRelatives: (id: string, type?: BasicRelationType) => FamilyMember[];
-  getMemberRelationships: (id: string) => Array<{ memberId: string; type: BasicRelationType; subtype?: string }>;
+  getMemberRelationships: (id: string) => { memberId: string; type: BasicRelationType; subtype?: string }[];
 
   // ═══════════ COMPUTED RELATIONSHIPS ═══════════
   getParents: (id: string) => FamilyMember[];
@@ -1159,7 +1159,7 @@ export const useVrikshaStore = create<VrikshaState>()(
 
         console.log(`[VrikshaStore] Applying remote update v${data.metadata.version}`);
 
-        // Normalize: Firebase may return objects instead of arrays
+        // Normalize: remote sync may return objects instead of arrays
         const membersArr: FamilyMember[] = Array.isArray(data.members)
           ? data.members
           : Object.values(data.members as any);
@@ -1282,7 +1282,7 @@ export const useVrikshaStore = create<VrikshaState>()(
 );
 
 // ═══════════════════════════════════════════════════════════
-// AUTO-SYNC: Push changes to Firebase on store mutations
+// AUTO-SYNC: Push changes to remote on store mutations (currently disabled)
 // ═══════════════════════════════════════════════════════════
 
 let pushDebounceTimer: ReturnType<typeof setTimeout> | null = null;

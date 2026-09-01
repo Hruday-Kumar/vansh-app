@@ -29,7 +29,7 @@ import QRCode from 'react-native-qrcode-svg';
 import Animated, { FadeIn, SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { isFirebaseConfigured } from './tree-sync-service';
+import { isTreeSyncConfigured } from './tree-sync-service';
 import { VanshColors, VanshRadius } from '../../theme';
 import {
     encodeTreeAsShareCode,
@@ -89,9 +89,9 @@ export function ShareTreeModal({ visible, member, onClose }: ShareTreeModalProps
     try {
       const exported = exportData();
 
-      // Auto-publish to Firebase for live sync (if not already synced)
+      // Auto-publish for live sync (if not already synced)
       let currentSyncTreeId = syncTreeId;
-      if (isFirebaseConfigured && !isSynced) {
+      if (isTreeSyncConfigured && !isSynced) {
         const treeName = `${member.firstName} ${member.lastName || ''}`.trim();
         currentSyncTreeId = await enableSync(treeName, member.id);
         console.log('[ShareTree] Auto-enabled sync:', currentSyncTreeId);

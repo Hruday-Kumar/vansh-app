@@ -44,7 +44,7 @@ export interface SharePayload {
   mode: ShareMode;
   name: string;           // sharer's display name
   ts: string;             // ISO timestamp
-  syncTreeId?: string;    // Firebase tree ID for auto-sync
+  syncTreeId?: string;    // Remote tree ID for auto-sync (sync disabled, see tree-sync-service.ts)
   data: {
     members: FamilyMember[];
     relations: StoredRelation[];

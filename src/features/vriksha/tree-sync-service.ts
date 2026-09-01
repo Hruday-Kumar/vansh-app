@@ -2,8 +2,8 @@
  * 🔄 TREE SYNC SERVICE — disabled
  * ═══════════════════════════════════════════════════════════
  *
- * The Firebase-backed implementation was removed in Phase 0
- * Workstream 0.1 (the Realtime Database was publicly readable/writable).
+ * The prior implementation (a publicly readable/writable Realtime
+ * Database) was removed in Phase 0 Workstream 0.1.
  * Cross-device tree sync returns in Phase 0 Workstream 0.4 on top of
  * Postgres + core/sync — see docs/phases/phase-0-foundation.md.
  *
@@ -42,7 +42,7 @@ interface LocalSyncInfo {
 
 const STORAGE_KEY_SYNC = 'vansh_tree_sync_info';
 
-export const isFirebaseConfigured = false;
+export const isTreeSyncConfigured = false;
 
 export async function initTreeSync(
   _onRemoteUpdate: (data: SyncedTreeData) => void
