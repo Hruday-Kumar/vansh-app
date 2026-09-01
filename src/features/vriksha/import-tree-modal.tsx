@@ -30,7 +30,7 @@ import {
 import Animated, { FadeIn, FadeInDown, SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { isFirebaseConfigured } from '../../config/firebase';
+import { isFirebaseConfigured } from './tree-sync-service';
 import { VanshColors, VanshRadius } from '../../theme';
 import {
   decodeShareCode,
@@ -354,7 +354,7 @@ export function ImportTreeModal({ visible, onClose, onImported }: ImportTreeModa
       </View>
       <Text style={styles.heroTitle}>Import Family Tree</Text>
       <Text style={styles.heroSubtitle}>
-        Choose how you'd like to import a shared family tree
+        Choose how you&apos;d like to import a shared family tree
       </Text>
 
       <View style={styles.importOptions}>
@@ -433,7 +433,7 @@ export function ImportTreeModal({ visible, onClose, onImported }: ImportTreeModa
           <View style={[styles.modeBadge, { backgroundColor: modeColor + '18' }]}>
             <Text style={[styles.modeBadgeText, { color: modeColor }]}>{modeLabel}</Text>
           </View>
-          <Text style={styles.previewTitle}>{decodedPayload.name}'s Family Tree</Text>
+          <Text style={styles.previewTitle}>{decodedPayload.name}&apos;s Family Tree</Text>
           <Text style={styles.previewMeta}>
             {members.length} members · {relations.length} relations
           </Text>
@@ -538,7 +538,7 @@ export function ImportTreeModal({ visible, onClose, onImported }: ImportTreeModa
           ListFooterComponent={
             <Pressable style={styles.notInTreeButton} onPress={() => setStep('add-self')}>
               <MaterialIcons name="person-add" size={20} color="#9333EA" />
-              <Text style={styles.notInTreeText}>I'm not in this tree</Text>
+              <Text style={styles.notInTreeText}>I&apos;m not in this tree</Text>
 </Pressable>
           }
         />
@@ -570,7 +570,7 @@ export function ImportTreeModal({ visible, onClose, onImported }: ImportTreeModa
       <ScrollView style={styles.addSelfContainer} contentContainerStyle={styles.addSelfContent}>
         <Text style={styles.addSelfTitle}>Add Yourself to the Tree</Text>
         <Text style={styles.addSelfSubtitle}>
-          Tell us your name, who you're related to, and your relationship
+          Tell us your name, who you&apos;re related to, and your relationship
         </Text>
 
         <View style={styles.formSection}>

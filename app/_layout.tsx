@@ -13,7 +13,6 @@ import { LanguageProvider } from '../src/hooks/use-language';
 import { initializeI18n } from '../src/i18n';
 import { initializeAnalytics, initializeDeepLinks } from '../src/services';
 import { loadPersistedCache, startCacheCleanup } from '../src/services/cache';
-import { initializeMasterKey } from '../src/services/encryption';
 import { initializeImageCache } from '../src/services/image-optimization';
 import { initializePerformanceMonitoring, markAppReady, markStartupTime } from '../src/services/performance';
 import { initNetworkMonitoring } from '../src/services/sync';
@@ -86,9 +85,6 @@ export default function RootLayout() {
       try {
         // Initialize network monitoring for offline sync
         await initNetworkMonitoring();
-        
-        // Initialize encryption keys
-        await initializeMasterKey();
         
         // Initialize i18n (language support)
         await initializeI18n();

@@ -14,7 +14,6 @@ export * from './transcription';
 
 // Security & Privacy
 export * from './biometrics';
-export * from './encryption';
 export * from './privacy';
 export * from './secure-storage';
 

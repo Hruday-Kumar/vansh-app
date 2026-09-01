@@ -29,7 +29,7 @@ import QRCode from 'react-native-qrcode-svg';
 import Animated, { FadeIn, SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { isFirebaseConfigured } from '../../config/firebase';
+import { isFirebaseConfigured } from './tree-sync-service';
 import { VanshColors, VanshRadius } from '../../theme';
 import {
     encodeTreeAsShareCode,
